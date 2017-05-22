@@ -247,19 +247,28 @@ public:
 	FName GetCategoryName(const FJavascriptLogCategory& Category);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static void CopyDefaultsFromImplementation(AActor* dst, AActor* src);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static void SetMobile(USceneComponent* SceneComponent);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static void SetMobility(USceneComponent* SceneComponent, EComponentMobility::Type Type);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
-	static UWorld* Actor_GetWorld(AActor* Actor);
+	static UWorld* Actor_GetWorld(AActor* Actor); 
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static UActorComponent* Actor_AddComponent(AActor* Actor, UClass* Class);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static UClass* GetBlueprintGeneratedClass(UBlueprint* Blueprint);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static UClass* GetBlueprintGeneratedClassFromPath(FString Path);
+
+    UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static UClass* FindClass(FString Path);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static UObject* GetOuter(UObject* Object);

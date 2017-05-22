@@ -88,6 +88,31 @@ UWorld* UJavascriptLibrary::Actor_GetWorld(AActor* Actor)
 	return Actor ? Actor->GetWorld() : nullptr;
 }
 
+void UJavascriptLibrary::CopyDefaultsFromImplementation(AActor* dst, AActor* src)
+{
+	for (TFieldIterator<UProperty> It(dst->GetClass()); It; ++It)
+	{
+		UProperty* prop = *It;
+		prop->CopyCompleteValue_InContainer(dst, src);
+	}
+} 
+
+UActorComponent* UJavascriptLibrary::Actor_AddComponent(AActor* Actor, UClass* Class)
+{
+	UActorComponent* Component = nullptr;
+
+	if (Actor)
+	{
+		Component = NewObject<UActorComponent>(Actor, Class);
+		if (Component)
+		{
+			Component->RegisterComponent();
+		}
+	}
+
+	return Component;
+}
+
 UClass* UJavascriptLibrary::GetBlueprintGeneratedClass(UBlueprint* Blueprint)
 {
 	UE_LOG(Javascript, Warning, TEXT("GetBlueprintGeneratedClass will be deprecated : Use instead Blueprint.GeneratedClass"));
@@ -98,6 +123,11 @@ UClass* UJavascriptLibrary::GetBlueprintGeneratedClassFromPath(FString Path)
 {
 	UE_LOG(Javascript, Warning, TEXT("GetBlueprintGeneratedClassFromPath will be deprecated : Use instead Blueprint.Load(Path).GeneratedClass"));
 	return GetBlueprintGeneratedClass(Cast<UBlueprint>(StaticLoadObject(UBlueprint::StaticClass(), nullptr, *Path)));
+}
+
+UClass* UJavascriptLibrary::FindClass(FString Path)
+{
+	return FindObject<UClass>(ANY_PACKAGE, *Path);
 }
 
 UObject* UJavascriptLibrary::GetOuter(UObject* Object)
