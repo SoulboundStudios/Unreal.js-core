@@ -1328,7 +1328,7 @@ public:
 					auto exports = Self->RunScript(full_path, Text, 0);
 					if (exports.IsEmpty())
 					{
-						UE_LOG(Javascript, Log, TEXT("Invalid script for require"));
+						UE_LOG(Javascript, Log, TEXT("Invalid script for require %s"), *script_path);
 					}
 					Self->Modules.Add(full_path, UniquePersistent<Value>(isolate, exports));
 					info.GetReturnValue().Set(exports);

@@ -38,7 +38,8 @@
         argv: [],
         argc: 0,
         platform: 'UnrealJS',
-        env: {}
+        env: {},
+        on: function (a, b) {}
     }
 
     Root.OnTick.Add(root)
