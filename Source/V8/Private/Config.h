@@ -1,6 +1,6 @@
 #pragma once
-#include "Package.h"
-#include "MetaData.h"
+
+static const FString NamespaceObject(TEXT("Unreal"));
 
 struct FV8Config
 {

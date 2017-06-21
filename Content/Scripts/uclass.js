@@ -84,7 +84,7 @@
             let className
             for (let index=0;;++index) {
                 className = `${orgClassName}_C${index}`
-                if (!UObject.Find(null,className)) break
+                if (!Unreal.UObject.Find(null,className)) break
             }            
             let parentClass = Object.getPrototypeOf(template.prototype).constructor
             if (parentClass == Object) {
@@ -100,17 +100,12 @@
                     let type = arr.pop()
                     let is_array = false
                     let is_subclass = false                    
-                    let is_map = false
                     if (/\[\]$/.test(type)) {
                         is_array = true
                         type = type.substr(0, type.length - 2)
                     }
                     if (/\<\>$/.test(type)) {
                         is_subclass = true
-                        type = type.substr(0, type.length - 2)
-                    }
-                    if(/\{\}$/.test(type)) {
-                        is_map = true
                         type = type.substr(0, type.length - 2)
                     }
                     if (_.isFunction(target[type])) {
@@ -127,8 +122,7 @@
                             Type: type,
                             Decorators: arr,
                             IsSubclass: is_subclass,
-                            IsArray: is_array,
-                            IsMap: is_map
+                            IsArray: is_array
                         }
                     } else {
                         return null
@@ -197,7 +191,7 @@
                 }
             })
 
-            let thePackage = JavascriptLibrary.CreatePackage(null,'/Script/Javascript')
+            let thePackage = Unreal.JavascriptLibrary.CreatePackage(null,'/Script/Javascript')
 
             let klass = null
 

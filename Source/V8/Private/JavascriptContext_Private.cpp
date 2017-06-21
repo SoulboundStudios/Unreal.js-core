@@ -1,6 +1,7 @@
+#include "V8PCH.h"
+
 PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 
-#include "JavascriptContext_Private.h"
 #include "JavascriptIsolate.h"
 #include "JavascriptContext.h"
 #include "JavascriptComponent.h"
@@ -9,12 +10,9 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "Translator.h"
 #include "Exception.h"
 #include "IV8.h"
-#include "V8PCH.h"
-#include "Engine/Blueprint.h"
-#include "FileHelper.h"
-#include "Paths.h"
+
 #include "JavascriptIsolate_Private.h"
-#include "PropertyPortFlags.h"
+#include "JavascriptContext_Private.h"
 
 #if WITH_EDITOR
 #include "TypingGenerator.h"
@@ -224,7 +222,7 @@ static void SetStructFlags(UScriptStruct* Struct, const TArray<FString>& Flags)
 	}
 }
 
-static UProperty* CreateProperty(UObject* Outer, FName Name, const TArray<FString>& Decorators, FString Type, bool bIsArray, bool bIsSubclass, bool bIsMap)
+static UProperty* CreateProperty(UObject* Outer, FName Name, const TArray<FString>& Decorators, FString Type, bool bIsArray, bool bIsSubclass)
 {
 	auto SetupProperty = [&](UProperty* NewProperty) {
 		static struct FKeyword {
@@ -315,11 +313,11 @@ static UProperty* CreateProperty(UObject* Outer, FName Name, const TArray<FStrin
 				UObject* TypeObject = nullptr;
 				for (auto PackageToSearch : PackagesToSearch)
 				{
-					TypeObject = StaticFindObject(UObject::StaticClass(), (UObject*)ANY_PACKAGE, *FString::Printf(TEXT("/Script/%s.%s"), PackageToSearch, ObjectName));
+					TypeObject = StaticFindObject(UObject::StaticClass(), ANY_PACKAGE, *FString::Printf(TEXT("/Script/%s.%s"), PackageToSearch, ObjectName));
 					if (TypeObject) return TypeObject;
 				}
 
-				TypeObject = StaticFindObject(UObject::StaticClass(), (UObject*)ANY_PACKAGE, ObjectName);
+				TypeObject = StaticFindObject(UObject::StaticClass(), ANY_PACKAGE, ObjectName);
 				if (TypeObject) return TypeObject;
 
 				TypeObject = StaticLoadObject(UObject::StaticClass(), nullptr, ObjectName);
@@ -404,36 +402,7 @@ static UProperty* CreateProperty(UObject* Outer, FName Name, const TArray<FStrin
 			}
 		};
 
-		if (bIsMap)
-		{
-			auto q = NewObject<UMapProperty>(Outer, Name);
-			FString Left, Right;
-			if (Type.Split(TEXT(":"), &Left, &Right))
-			{
-				auto Key = FName(*Name.ToString().Append(TEXT("_Key")));
-				if (auto KeyProperty = CreateProperty(q, Key, Decorators, Left, false, false, false))
-				{
-					q->KeyProp = KeyProperty;
-					q->KeyProp->SetPropertyFlags(CPF_HasGetValueTypeHash);
-					auto Value = FName(*Name.ToString().Append(TEXT("_Value")));
-					if (auto ValueProperty = CreateProperty(q, Value, Decorators, Right, bIsArray, bIsSubclass, false))
-					{
-						q->ValueProp = ValueProperty;
-						if (q->ValueProp && q->ValueProp->HasAnyPropertyFlags(CPF_ContainsInstancedReference))
-						{
-							q->ValueProp->SetPropertyFlags(CPF_ContainsInstancedReference);
-						}
-					}
-					else
-						q->MarkPendingKill();
-				}
-				else
-					q->MarkPendingKill();
-			}
-
-			return q;
-		}
-		else if (bIsArray)
+		if (bIsArray)
 		{
 			auto q = NewObject<UArrayProperty>(Outer, Name);
 			q->Inner = SetupProperty(Inner(q, Type));
@@ -456,15 +425,14 @@ static UProperty* CreatePropertyFromDecl(FIsolateHelper& I, UObject* Outer, Hand
 	auto Decorators = Decl->Get(I.Keyword("Decorators"));
 	auto IsArray = Decl->Get(I.Keyword("IsArray"));
 	auto IsSubClass = Decl->Get(I.Keyword("IsSubclass"));
-	auto IsMap = Decl->Get(I.Keyword("IsMap"));
+
 	return CreateProperty(
 		Outer,
 		*StringFromV8(Name),
 		StringArrayFromV8(Decorators),
 		StringFromV8(Type),
 		!IsArray.IsEmpty() && IsArray->BooleanValue(),
-		!IsSubClass.IsEmpty() && IsSubClass->BooleanValue(),
-		!IsMap.IsEmpty() && IsMap->BooleanValue()
+		!IsSubClass.IsEmpty() && IsSubClass->BooleanValue()
 		);
 }
 
@@ -758,7 +726,7 @@ class FJavascriptContextImplementation : public FJavascriptContext
 	IJavascriptDebugger* debugger{ nullptr };
 	IJavascriptInspector* inspector{ nullptr };
 
-	TMap<FString, UObject*> WKOs;
+	TMap<FString, UObject*> globalObjects;
 
 public:
 	Isolate* isolate() { return Environment->isolate_; }
@@ -770,14 +738,14 @@ public:
 	TMap<FString, UniquePersistent<Value>> Modules;
 	TArray<FString>& Paths;
 
-	void SetAsDebugContext(int32 InPort)
+	void SetAsDebugContext()
 	{
 		if (debugger) return;
 
 		Isolate::Scope isolate_scope(isolate());
 		HandleScope handle_scope(isolate());
 
-		debugger = IJavascriptDebugger::Create(InPort, context());
+		debugger = IJavascriptDebugger::Create(5858, context());
 	}
 
 	bool IsDebugContext() const
@@ -1360,7 +1328,7 @@ public:
 					auto exports = Self->RunScript(full_path, Text, 0);
 					if (exports.IsEmpty())
 					{
-						UE_LOG(Javascript, Log, TEXT("Invalid script for require"));
+						UE_LOG(Javascript, Log, TEXT("Invalid script for require %s"), *script_path);
 					}
 					Self->Modules.Add(full_path, UniquePersistent<Value>(isolate, exports));
 					info.GetReturnValue().Set(exports);
@@ -1798,14 +1766,9 @@ public:
 		}
 	}
 
-    void FindPathFile(FString TargetRootPath, FString TargetFileName, TArray<FString>& OutFiles)
-    {
-        IFileManager::Get().FindFilesRecursive(OutFiles, TargetRootPath.GetCharArray().GetData(), TargetFileName.GetCharArray().GetData(), true, false);
-    }
-
 	void Expose(FString RootName, UObject* Object)
 	{
-		WKOs.Add(RootName, Object);
+		globalObjects.Add(RootName, Object);
 
 		auto RootGetter = [](Local<String> property, const PropertyCallbackInfo<Value>& info) {
 			auto isolate = info.GetIsolate();
@@ -1864,7 +1827,7 @@ public:
 			// Skip a generated class
 			if (ClassToExport->ClassGeneratedBy) continue;
 
-			auto ClassName = FV8Config::Safeify(ClassToExport->GetName());
+			auto ClassName = FString(NamespaceObject + ".") + FV8Config::Safeify(ClassToExport->GetName());
 
 			// Function with default value
 			{
@@ -1995,7 +1958,7 @@ public:
 		{
 			const UStruct* StructToExport = it.Key();
 
-			auto ClassName = FV8Config::Safeify(StructToExport->GetName());
+			auto ClassName = FString(NamespaceObject + ".") + FV8Config::Safeify(StructToExport->GetName());
 
 			TArray<UFunction*> Functions;
 			Environment->BlueprintFunctionLibraryMapping.MultiFind(StructToExport, Functions);
@@ -2045,12 +2008,12 @@ public:
 			instance.Export(it.Key());
 		}
 
-		for (auto pair : WKOs)
+		for (auto pair : globalObjects)
 		{
 			auto k = pair.Key;
 			auto v = pair.Value;
 
-			instance.ExportWKO(k, v);
+			instance.ExportGlobalObject(k, v);
 		}
 
 		instance.Finalize();

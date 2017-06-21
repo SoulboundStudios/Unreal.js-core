@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Config.h"
-#include "FileHelper.h"
 
 struct TypingGeneratorBase
 {
@@ -126,11 +125,6 @@ struct TokenWriter
 				push("number");
 			}
 		}
-		else if (auto p = Cast<UEnumProperty>(Property))
-		{
-			generator.Export(p->GetEnum());
-			push(FV8Config::Safeify(p->GetName()));
-		}
 		else if (auto p = Cast<UMulticastDelegateProperty>(Property))
 		{
 			push("UnrealEngineMulticastDelegate<");
@@ -235,7 +229,7 @@ struct TypingGenerator : TypingGeneratorBase
 		TokenWriter w(*this);
 
 		auto enumName = FV8Config::Safeify(source->GetName());
-		w.push("declare type ");
+		w.push("type ");
 		w.push(enumName);
 		w.push(" = ");
 
@@ -266,7 +260,7 @@ struct TypingGenerator : TypingGeneratorBase
 
 		w.push(";\n");
 
-		w.push("declare var ");
+		w.push("var ");
 		w.push(enumName);
 		w.push(" : { ");
 
@@ -312,15 +306,21 @@ struct TypingGenerator : TypingGeneratorBase
 		
 		w.tooltip("", source);
 
-		w.push("declare class ");
+		w.push("class ");
 		w.push(name);
 
 		if (super_class)
 		{
 			Export(super_class);
 
-			w.push(" extends ");
-			w.push(FV8Config::Safeify(super_class->GetName()));
+			auto superName = FV8Config::Safeify(super_class->GetName());
+
+			// Skip BFL children extending, since typescript sucks at static overload resolution, which is all a BFL is
+			if (!superName.Equals(TEXT("BlueprintFunctionLibrary")))
+			{
+				w.push(" extends ");
+				w.push(superName);
+			}
 		}
 		w.push(" { \n");
 
@@ -437,22 +437,15 @@ struct TypingGenerator : TypingGeneratorBase
 
 		if (auto klass = Cast<UClass>(source))
 		{
-
-			bool bIsUObject = (klass == UObject::StaticClass() || !klass->IsChildOf(UObject::StaticClass()));
-
 			if (klass->IsChildOf(AActor::StaticClass()))
 			{
 				Export(UWorld::StaticClass());
-				if (klass == AActor::StaticClass()) {
-					w.push("\tconstructor(InWorld: World, Location?: Vector, Rotation?: Rotator);\n");
-				}
+				w.push("\tconstructor(InWorld: World, Location?: Vector, Rotation?: Rotator);\n");
 			}
 			else
 			{
-				if (bIsUObject) {
-					w.push("\tconstructor();\n");
-					w.push("\tconstructor(Outer: UObject);\n");
-				}
+				w.push("\tconstructor();\n");
+				w.push("\tconstructor(Outer: UObject);\n");
 				w.push("\tstatic Load(ResourceName: string): ");
 				w.push(name);
 				w.push(";\n");
@@ -461,20 +454,16 @@ struct TypingGenerator : TypingGeneratorBase
 				w.push(";\n");
 			}
 
-			if (bIsUObject) {
-				w.push("\tstatic StaticClass: any;\n");
+			w.push("\tstatic StaticClass: any;\n");
 
-				w.push("\tstatic GetClassObject(): Class;\n");
-			}
+			w.push("\tstatic GetClassObject(): Class;\n");
 
 			w.push("\tstatic GetDefaultObject(): ");
 			w.push(name);
 			w.push(";\n");
 
-			if (bIsUObject) {
-				w.push("\tstatic GetDefaultSubobjectByName(Name: string): UObject;\n");
-				w.push("\tstatic SetDefaultSubobjectClass(Name: string): void;\n");
-			}
+			w.push("\tstatic GetDefaultSubobjectByName(Name: string): UObject;\n");
+			w.push("\tstatic SetDefaultSubobjectClass(Name: string): void;\n");
 			w.push("\tstatic CreateDefaultSubobject(Name: string, Transient?: boolean, Required?: boolean, Abstract?: boolean): ");
 			w.push(name);
 			w.push(";\n");
@@ -491,7 +480,7 @@ struct TypingGenerator : TypingGeneratorBase
 		else
 		{
 			w.push("\tclone() : ");
-			w.push(name);
+			w.push("any");//w.push(name); changed because typescript doesn't allow overloads changing return types
 			w.push(";\n");
 		}
 
@@ -525,44 +514,44 @@ struct TypingGenerator : TypingGeneratorBase
 	void ExportBootstrap()
 	{
 		TokenWriter w(*this);
-		w.push("declare function gc() : void;\n");
-		w.push("declare type UnrealEngineClass = any;\n");
+		w.push("function gc() : void;\n");
+		w.push("type UnrealEngineClass = any;\n");
 
-		w.push("declare type timeout_handle = any;\n");
-		w.push("declare function setTimeout(fn : (milliseconds: number) => void, timeout : number) : timeout_handle;\n");
-		w.push("declare function clearTimeout(handle : timeout_handle) : void;\n");
+		w.push("type timeout_handle = any;\n");
+		w.push("function setTimeout(fn : (milliseconds: number) => void, timeout : number) : timeout_handle;\n");
+		w.push("function clearTimeout(handle : timeout_handle) : void;\n");
 
-		w.push("declare class UnrealEngineMulticastDelegate<T> {\n");
+		w.push("class UnrealEngineMulticastDelegate<T> {\n");
 		w.push("\tAdd(fn : T): void;\n");
 		w.push("\tRemove(fn : T): void;\n");
 		w.push("}\n\n");
 
-		w.push("declare class UnrealEngineDelegate<T> {\n");
+		w.push("class UnrealEngineDelegate<T> {\n");
 		w.push("\tAdd(fn : T): void;\n");
 		w.push("\tRemove(fn : T): void;\n");
 		w.push("}\n\n");
 
-		w.push("declare class Process {\n");
+		w.push("class Process {\n");
 		w.push("\tnextTick(fn : (number) => void): void;\n");		
 		w.push("}\n\n");
-		w.push("declare var process : Process;\n\n");
+		w.push("var process : Process;\n\n");
 
-		w.push("declare class Memory {\n");
+		w.push("class Memory {\n");
 		w.push("\texec(ab : ArrayBuffer, fn : (ab : ArrayBuffer) => void): void;\n");
 		w.push("\taccess(obj : JavascriptMemoryObject): ArrayBuffer;\n");
 		w.push("}\n\n");
-		w.push("declare var memory : Memory;\n\n");
+		w.push("var memory : Memory;\n\n");
 
 		Text.Append(*w);
 	}
 
-	void ExportWKO(FString name, UObject* Object)
+	void ExportGlobalObject(FString name, UObject* Object)
 	{
 		TokenWriter w(*this);
 
 		Export(Object->GetClass());
 
-		w.push("declare var ");
+		w.push("var ");
 		w.push(name);
 		w.push(" : ");
 		w.push(FV8Config::Safeify(Object->GetClass()->GetName()));
@@ -588,6 +577,14 @@ struct TypingGenerator : TypingGeneratorBase
 			const bool is_last = (Index == (Folded.Num() - 1));
 
 			FString Text = Folded[Index];
+
+			// Apply namespace object to typings file
+			FString NamespacedHeader(TEXT("declare namespace "));
+			NamespacedHeader.Append(NamespaceObject);
+			NamespacedHeader.Append(TEXT(" {\n"));
+			NamespacedHeader.Append(Text);
+			Text = NamespacedHeader;
+			Text.Append("\n}\n");
 
 			auto page_name = [&](int32 Index) {
 				return FString::Printf(TEXT("_part_%d_%s.%s"), Index, *BaseFilename, *Extension);

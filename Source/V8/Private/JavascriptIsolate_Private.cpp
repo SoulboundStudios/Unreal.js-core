@@ -1,11 +1,7 @@
+#include "V8PCH.h"
+
 PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 
-#ifndef THIRD_PARTY_INCLUDES_START
-#	define THIRD_PARTY_INCLUDES_START
-#	define THIRD_PARTY_INCLUDES_END
-#endif
-
-#include "JavascriptIsolate_Private.h"
 #include "Config.h"
 #include "MallocArrayBufferAllocator.h"
 #include "Translator.h"
@@ -13,6 +9,7 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "Exception.h"
 #include "Delegates.h"
 #include "JavascriptIsolate.h"
+#include "JavascriptIsolate_Private.h"
 #include "JavascriptContext_Private.h"
 #include "JavascriptContext.h"
 #include "Helpers.h"
@@ -20,22 +17,12 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "JavascriptGeneratedClass_Native.h"
 #include "StructMemoryInstance.h"
 #include "JavascriptMemoryObject.h"
-#include "Engine/UserDefinedStruct.h"
-#include "Ticker.h"
-#include "V8PCH.h"
-#include "UObjectIterator.h"
-#include "TextProperty.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
-
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
 #endif
 #include "JavascriptStats.h"
 #include "IV8.h"
-
-THIRD_PARTY_INCLUDES_START
 #include <libplatform/libplatform.h>
-THIRD_PARTY_INCLUDES_END
 
 using namespace v8;
 
@@ -93,34 +80,6 @@ void FArrayBufferAccessor::Discard()
 	GCurrentContents = v8::ArrayBuffer::Contents();
 }
 
-FString PropertyNameToString(UProperty* Property)
-{
-	auto Struct = Property->GetOwnerStruct();
-	auto name = Property->GetFName();
-	if (Struct)
-	{
-		if (auto s = Cast<UUserDefinedStruct>(Struct))
-		{
-			return s->PropertyNameToDisplayName(name);
-		}
-	}
-	return name.ToString();
-}
-
-bool MatchPropertyName(UProperty* Property, FName NameToMatch)
-{
-	auto Struct = Property->GetOwnerStruct();
-	auto name = Property->GetFName();
-	if (Struct)
-	{
-		if (auto s = Cast<UUserDefinedStruct>(Struct))
-		{
-			return s->PropertyNameToDisplayName(name) == NameToMatch.ToString();
-		}
-	}
-	return name == NameToMatch;
-}
-
 class FJavascriptIsolateImplementation : public FJavascriptIsolate
 {
 public:
@@ -130,6 +89,7 @@ public:
 	}
 
 	Persistent<ObjectTemplate> GlobalTemplate;
+	Persistent<ObjectTemplate> GlobalNamespaceTemplate;
 
 	// Allocator instance should be set for V8's ArrayBuffer's
 	FMallocArrayBufferAllocator AllocatorInstance;	
@@ -407,6 +367,12 @@ public:
 		// Save it into the persistant handle
 		GlobalTemplate.Reset(isolate_, ObjectTemplate);
 
+		// Add the global namespace object
+		FIsolateHelper I(isolate_);
+		GlobalNamespaceTemplate.Reset(isolate_, ObjectTemplate::New(isolate_));
+		auto globalNamespaceTemplate = Local<v8::ObjectTemplate>::New(isolate_, GlobalNamespaceTemplate);
+		GetGlobalTemplate()->Set(I.String(NamespaceObject), globalNamespaceTemplate);
+
 		// Export all structs
 		for (TObjectIterator<UScriptStruct> It; It; ++It)
 		{
@@ -425,11 +391,13 @@ public:
 			ExportEnum(*It);
 		}
 
+		// Leave console in global namespace
 		ExportConsole(ObjectTemplate);
 
-		ExportMemory(ObjectTemplate);
+		// Add memory and misc to Unreal namespace
+		ExportMemory(globalNamespaceTemplate);
 
-		ExportMisc(ObjectTemplate);		
+		ExportMisc(globalNamespaceTemplate);
 	}		
 
 	~FJavascriptIsolateImplementation()
@@ -461,6 +429,7 @@ public:
 
 		// Release global template
 		GlobalTemplate.Reset();
+		GlobalNamespaceTemplate.Reset();
 	}
 
 	void GenerateBlueprintFunctionLibraryMapping()
@@ -651,11 +620,6 @@ public:
 				return Int32::New(isolate_, Value);
 			}
 		}
-		else if (auto p = Cast<UEnumProperty>(Property))
-		{
-			int32 Value = p->GetUnderlyingProperty()->GetValueTypeHash(Buffer);
-			return I.Keyword(p->GetEnum()->GetEnumName(Value));
-		}
 		else if (auto p = Cast<USetProperty>(Property))
 		{
 			FScriptSetHelper_InContainer SetHelper(p, Buffer);
@@ -714,9 +678,9 @@ public:
 		for (TFieldIterator<UProperty> PropertyIt(Struct, EFieldIteratorFlags::IncludeSuper); PropertyIt && len; ++PropertyIt)
 		{
 			auto Property = *PropertyIt;
-			auto PropertyName = PropertyNameToString(Property);
+			auto PropertyName = Property->GetFName();
 
-			auto name = I.Keyword(PropertyName);
+			auto name = I.Keyword(PropertyName.ToString());
 			auto value = v8_obj->Get(name);
 
 			if (!value.IsEmpty() && !value->IsUndefined())
@@ -914,20 +878,6 @@ public:
 				p->SetPropertyValue_InContainer(Buffer, Value->Int32Value());
 			}
 		}
-		else if (auto p = Cast<UEnumProperty>(Property))
-		{
-			auto Str = StringFromV8(Value);
-			auto EnumValue = p->GetEnum()->FindEnumIndex(FName(*Str));
-			if (EnumValue == INDEX_NONE)
-			{
-				I.Throw(FString::Printf(TEXT("Enum Text %s for Enum %s failed to resolve to any value"), *Str, *p->GetName()));
-			}
-			else
-			{
-				uint8* PropData = p->ContainerPtrToValuePtr<uint8>(Buffer);
-				p->GetUnderlyingProperty()->SetIntPropertyValue(PropData, (int64)EnumValue);
-			}
-		}
 		else if (auto p = Cast<UObjectPropertyBase>(Property))
 		{
 			p->SetObjectPropertyValue_InContainer(Buffer, UObjectFromV8(Value));
@@ -980,6 +930,11 @@ public:
 	virtual Local<ObjectTemplate> GetGlobalTemplate() override
 	{
 		return Local<ObjectTemplate>::New(isolate_, GlobalTemplate);
+	}
+
+	Local<ObjectTemplate> GetGlobalNamespaceTemplate()
+	{
+		return Local<ObjectTemplate>::New(isolate_, GlobalNamespaceTemplate);
 	}
 
 	void ExportConsole(Local<ObjectTemplate> global_templ)
@@ -1615,7 +1570,7 @@ public:
 		};
 
 		Template->PrototypeTemplate()->SetAccessor(
-			I.Keyword(PropertyNameToString(PropertyToExport)),
+			I.Keyword(PropertyToExport->GetName()),
 			Getter, 
 			Setter, 
 			I.External(PropertyToExport),
@@ -1894,13 +1849,10 @@ public:
 			if (Instance->GetMemory())
 			{				
 				auto Ref = reinterpret_cast<FJavascriptRef*>(Instance->GetMemory());
-				if (Ref->Handle.IsValid())
-				{
-					FPrivateJavascriptRef* Handle = Ref->Handle.Get();
-					auto object = Local<Object>::New(isolate, Handle->Object);
+				FPrivateJavascriptRef* Handle = Ref->Handle.Get();
+				auto object = Local<Object>::New(isolate, Handle->Object);
 
-					info.GetReturnValue().Set(object);
-				}
+				info.GetReturnValue().Set(object);
 			}
 		};
 
@@ -1963,9 +1915,9 @@ public:
 
 				if (FV8Config::CanExportProperty(Class, Property))
 				{
-					auto PropertyName = PropertyNameToString(Property);
+					auto PropertyName = Property->GetFName();
 
-					auto name = I.Keyword(PropertyName);
+					auto name = I.Keyword(PropertyName.ToString());
 					auto value = PropertyAccessor::Get(isolate, self, Property);
 					if (auto p = Cast<UClassProperty>(Property))
 					{
@@ -2057,7 +2009,7 @@ public:
 				{
 					FScriptArrayHelper_InContainer helper(p, Instance);
 
-					if (FV8Config::CanExportProperty(Class, Property) && MatchPropertyName(Property,PropertyNameToAccess))
+					if (FV8Config::CanExportProperty(Class, Property) && Property->GetFName() == PropertyNameToAccess)
 					{
 						Handle<Value> argv[1];
 
@@ -2394,7 +2346,7 @@ public:
 
 		// public name
 		auto name = I.Keyword(FV8Config::Safeify(Enum->GetName()));
-		GetGlobalTemplate()->Set(name, arr);
+		GetGlobalNamespaceTemplate()->Set(name, arr);
 
 		return arr;
 	}
@@ -2579,11 +2531,12 @@ public:
 		auto Context = isolate_->GetCurrentContext();
 		if (!Context.IsEmpty())
 		{
-			Context->Global()->Set(name, Template->GetFunction());
+			Local<Object> nsObj = Local<Object>::Cast(Context->Global()->Get(I.String(NamespaceObject)));
+			nsObj->Set(name, Template->GetFunction());
 		}
 
 		// Register this class to the global template so that any other contexts which will be created later have this function template.
-		GetGlobalTemplate()->Set(name, Template);
+		GetGlobalNamespaceTemplate()->Set(name, Template);
 
 		// Track this class from v8 gc.
 		auto& result = TheMap.Add(Class, UniquePersistent<FunctionTemplate>(isolate_, Template));
