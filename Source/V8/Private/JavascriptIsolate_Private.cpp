@@ -131,6 +131,7 @@ public:
 	}
 
 	Persistent<ObjectTemplate> GlobalTemplate;
+    Persistent<ObjectTemplate> GlobalNamespaceTemplate;
 
 	// Allocator instance should be set for V8's ArrayBuffer's
 	FMallocArrayBufferAllocator AllocatorInstance;	
@@ -408,6 +409,12 @@ public:
 		// Save it into the persistant handle
 		GlobalTemplate.Reset(isolate_, ObjectTemplate);
 
+        // Add the global namespace object
+ 		FIsolateHelper I(isolate_);
+ 		GlobalNamespaceTemplate.Reset(isolate_, ObjectTemplate::New(isolate_));
+ 		auto globalNamespaceTemplate = Local<v8::ObjectTemplate>::New(isolate_, GlobalNamespaceTemplate);
+ 		GetGlobalTemplate()->Set(I.String(NamespaceObject), globalNamespaceTemplate);
+
 		// Export all structs
 		for (TObjectIterator<UScriptStruct> It; It; ++It)
 		{
@@ -428,9 +435,9 @@ public:
 
 		ExportConsole(ObjectTemplate);
 
-		ExportMemory(ObjectTemplate);
+		ExportMemory(globalNamespaceTemplate);
 
-		ExportMisc(ObjectTemplate);		
+		ExportMisc(globalNamespaceTemplate);		
 	}		
 
 	~FJavascriptIsolateImplementation()
@@ -462,6 +469,7 @@ public:
 
 		// Release global template
 		GlobalTemplate.Reset();
+        GlobalNamespaceTemplate.Reset();
 	}
 
 	void GenerateBlueprintFunctionLibraryMapping()
@@ -978,6 +986,11 @@ public:
 		}
 	};		
 	
+    Local<ObjectTemplate> GetGlobalNamespaceTemplate() 
+    {
+        return Local<ObjectTemplate>::New(isolate_, GlobalNamespaceTemplate);
+    }
+
 	virtual Local<ObjectTemplate> GetGlobalTemplate() override
 	{
 		return Local<ObjectTemplate>::New(isolate_, GlobalTemplate);
@@ -2395,7 +2408,7 @@ public:
 
 		// public name
 		auto name = I.Keyword(FV8Config::Safeify(Enum->GetName()));
-		GetGlobalTemplate()->Set(name, arr);
+		GetGlobalNamespaceTemplate()->Set(name, arr);
 
 		return arr;
 	}
@@ -2584,7 +2597,7 @@ public:
 		}
 
 		// Register this class to the global template so that any other contexts which will be created later have this function template.
-		GetGlobalTemplate()->Set(name, Template);
+		GetGlobalNamespaceTemplate()->Set(name, Template);
 
 		// Track this class from v8 gc.
 		auto& result = TheMap.Add(Class, UniquePersistent<FunctionTemplate>(isolate_, Template));

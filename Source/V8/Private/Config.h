@@ -2,6 +2,8 @@
 #include "Package.h"
 #include "MetaData.h"
 
+static const FString NamespaceObject(TEXT("Unreal"));
+
 struct FV8Config
 {
 	static FString Safeify(const FString& Name)

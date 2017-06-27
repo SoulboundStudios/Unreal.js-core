@@ -38,7 +38,7 @@ var devrequire = function (opts) {
             }
         },
         Watch : function (path) {
-            var w = new DirectoryWatcher()
+            var w = new Unreal.DirectoryWatcher()
             var self = this;
             w.OnChanged.Add(function () {
                 self.OnChanged.list.forEach(function (fn) { fn(); });
@@ -85,7 +85,7 @@ var devrequire = function (opts) {
                 var file = _.uniq(changed_modules).join(',')
 
                 if (should_notify) {
-                    var note = new JavascriptNotification
+                    var note = new Unreal.JavascriptNotification
                     note.Text = notification_message + ": " + file
                     note.bFireAndForget = true
                     note.Fire()

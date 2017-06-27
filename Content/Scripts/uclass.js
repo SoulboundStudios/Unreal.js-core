@@ -84,7 +84,7 @@
             let className
             for (let index=0;;++index) {
                 className = `${orgClassName}_C${index}`
-                if (!UObject.Find(null,className)) break
+                if (!Unreal.UObject.Find(null,className)) break
             }            
             let parentClass = Object.getPrototypeOf(template.prototype).constructor
             if (parentClass == Object) {
@@ -197,7 +197,7 @@
                 }
             })
 
-            let thePackage = JavascriptLibrary.CreatePackage(null,'/Script/Javascript')
+            let thePackage = Unreal.JavascriptLibrary.CreatePackage(null,'/Script/Javascript')
 
             let klass = null
 

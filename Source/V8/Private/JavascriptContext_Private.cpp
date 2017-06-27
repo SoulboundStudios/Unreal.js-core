@@ -1864,7 +1864,7 @@ public:
 			// Skip a generated class
 			if (ClassToExport->ClassGeneratedBy) continue;
 
-			auto ClassName = FV8Config::Safeify(ClassToExport->GetName());
+			auto ClassName = FString(NamespaceObject + ".") + FV8Config::Safeify(ClassToExport->GetName());
 
 			// Function with default value
 			{
@@ -1995,7 +1995,7 @@ public:
 		{
 			const UStruct* StructToExport = it.Key();
 
-			auto ClassName = FV8Config::Safeify(StructToExport->GetName());
+			auto ClassName = FString(NamespaceObject + ".") +FV8Config::Safeify(StructToExport->GetName());
 
 			TArray<UFunction*> Functions;
 			Environment->BlueprintFunctionLibraryMapping.MultiFind(StructToExport, Functions);
