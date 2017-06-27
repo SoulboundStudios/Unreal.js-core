@@ -73,6 +73,7 @@ FJavascriptWebSocket::FJavascriptWebSocket(WebSocketInternalContext* InContext, 
 
 bool FJavascriptWebSocket::Send(uint8* Data, uint32 Size)
 {
+	UE_LOG(LogWebsocket, Verbose, TEXT("Send %d"), Size);
 	TArray<uint8> Buffer;
 	// insert size. 
 
@@ -116,13 +117,17 @@ void FJavascriptWebSocket::HandlePacket()
 
 void FJavascriptWebSocket::Flush()
 {
-	auto PendingMesssages = OutgoingBuffer.Num();
-	while (OutgoingBuffer.Num() > 0 && !IsServerSide)
-	{
+	UE_LOG(LogWebsocket, Log, TEXT("Flushing OutgoingBuffer.Num() %d"), OutgoingBuffer.Num());
+	int flushAttempts = 0;
+	while (OutgoingBuffer.Num() > 0 && !IsServerSide && (flushAttempts < 100))
+	{ 
 		if (Protocols)
 			lws_callback_on_writable_all_protocol(Context, &Protocols[0]);
 		else
 			lws_callback_on_writable(Wsi);
+		lws_service(Context, 0);
+		++flushAttempts;
+		UE_LOG(LogWebsocket, Log, TEXT("Flushing OutgoingBuffer.Num() %d flushAttempts %d"), OutgoingBuffer.Num(), flushAttempts);
 	};
 }
 
@@ -145,6 +150,8 @@ void FJavascriptWebSocket::OnRawWebSocketWritable(WebSocketInternal* wsi)
 {
 	if (OutgoingBuffer.Num() == 0)
 		return;
+
+	UE_LOG(LogWebsocket, Verbose, TEXT("OutgoingBuffer.Num() before %d"), OutgoingBuffer.Num());
 
 	TArray <uint8>& Packet = OutgoingBuffer[0];
 
@@ -169,6 +176,7 @@ void FJavascriptWebSocket::OnRawWebSocketWritable(WebSocketInternal* wsi)
 
 	// this is very inefficient we need a constant size circular buffer to efficiently not do unnecessary allocations/deallocations. 
 	OutgoingBuffer.RemoveAt(0);
+	UE_LOG(LogWebsocket, Verbose, TEXT("OutgoingBuffer.Num() after %d"), OutgoingBuffer.Num());
 }
 
 FJavascriptWebSocket::~FJavascriptWebSocket()
@@ -191,6 +199,7 @@ int FJavascriptWebSocket::unreal_networking_client(lws *InWsi, lws_callback_reas
 	{
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
 		{
+			UE_LOG(LogWebsocket, Display, TEXT("LWS_CALLBACK_CLIENT_ESTABLISHED"));
 			check(Wsi == InWsi);
 			ConnectedCallBack.ExecuteIfBound();
 			lws_set_timeout(Wsi, NO_PENDING_TIMEOUT, 0);			
@@ -198,6 +207,7 @@ int FJavascriptWebSocket::unreal_networking_client(lws *InWsi, lws_callback_reas
 		break;
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		{
+			UE_LOG(LogWebsocket, Warning, TEXT("LWS_CALLBACK_CLIENT_CONNECTION_ERROR"));
 			ErrorCallBack.ExecuteIfBound();
 			return -1;
 		}
@@ -220,6 +230,7 @@ int FJavascriptWebSocket::unreal_networking_client(lws *InWsi, lws_callback_reas
 		}
 	case LWS_CALLBACK_CLOSED:
 		{
+			UE_LOG(LogWebsocket, Display, TEXT("LWS_CALLBACK_CLOSED"));
 			ErrorCallBack.ExecuteIfBound();
 			return -1;
 		}
