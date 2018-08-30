@@ -1,12 +1,15 @@
 #pragma once
 
+#include "CoreMinimal.h"
 #include "UserWidget.h"
+#include "Components/PanelSlot.h"
 #include "JavascriptWidget.generated.h"
 
 class UJavascriptWidget;
 class UJavascriptContext;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInputActionEvent, FName, ActionName);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInputAxisEvent, float, Axis, FName, AxisName);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnReleaseSlateResources, bool, bReleaseChildren);
 /**
  * 
@@ -43,8 +46,23 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Scripting | Javascript")
 	void OnInputActionByName(FName ActionName);
 
+	UFUNCTION(BlueprintNativeEvent, Category = "Scripting | Javascript")
+	void OnReleaseInputActionByName(FName ActionName);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	void OnListenForInputAxis(FName AxisName, TEnumAsByte< EInputEvent > EventType, bool bConsume);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Scripting | Javascript")
+	void OnInputAxisByName(float Axis, FName ActionName);
+	
 	UPROPERTY(BlueprintAssignable, Category = "Scripting | Javascript")
 	FOnInputActionEvent OnInputActionEvent;
+
+	UPROPERTY(BlueprintAssignable, Category = "Scripting | Javascript")
+	FOnInputActionEvent OnReleaseActionEvent;
+
+	UPROPERTY(BlueprintAssignable, Category = "Scripting | Javascript")
+	FOnInputAxisEvent OnInputAxisEvent;
 
 	UPROPERTY(BlueprintAssignable, Category = "Scripting | Javascript")
 	FOnReleaseSlateResources OnDestroy;

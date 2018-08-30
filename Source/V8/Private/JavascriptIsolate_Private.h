@@ -1,6 +1,9 @@
 #pragma once
 
+#include "v8.h"
+
 struct FStructMemoryInstance;
+struct IPropertyOwner;
 class FJavascriptIsolate;
 
 struct FPendingClassConstruction
@@ -35,7 +38,7 @@ public:
 
 	v8::Isolate* isolate_;
 
-	static FJavascriptIsolate* Create();
+	static FJavascriptIsolate* Create(bool bIsEditor);
 	static v8::Local<v8::Value> ReadProperty(v8::Isolate* isolate, UProperty* Property, uint8* Buffer, const IPropertyOwner& Owner);
 	static void WriteProperty(v8::Isolate* isolate, UProperty* Property, uint8* Buffer, v8::Handle<v8::Value> Value);
 	static v8::Local<v8::Value> ExportStructInstance(v8::Isolate* isolate, UScriptStruct* Struct, uint8* Buffer, const IPropertyOwner& Owner);
@@ -47,5 +50,7 @@ public:
 	virtual v8::Local<v8::ObjectTemplate> GetGlobalTemplate() = 0;
 	virtual void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector) = 0;
 	virtual v8::Local<v8::Value> ExportStructInstance(UScriptStruct* Struct, uint8* Buffer, const IPropertyOwner& Owner) = 0;
+	virtual void PublicExportClass(UClass* ClassToExport) = 0;
+	virtual void PublicExportStruct(UScriptStruct* StructToExport) = 0;
 	virtual ~FJavascriptIsolate() {}	
 };

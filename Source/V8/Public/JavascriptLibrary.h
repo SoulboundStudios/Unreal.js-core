@@ -6,7 +6,6 @@
 #include "Engine/StreamableManager.h"
 #include "IPAddress.h"
 #include "AI/Navigation/RecastNavMesh.h"
-#include "Model.h"
 #include "JavascriptLibrary.generated.h"
 
 USTRUCT(BlueprintType)
@@ -67,6 +66,19 @@ enum class EJavascriptStatDataType : uint8
 	ST_Ptr,
 };
 
+UENUM()
+namespace EJavascriptEncodingOptions
+{
+	/** Ordered according to their severity */
+	enum Type
+	{
+		AutoDetect = 0,
+		ForceAnsi,
+		ForceUnicode,
+		ForceUTF8,
+		ForceUTF8WithoutBOM
+	};
+}
 
 /**
 * The operation being performed by this message
@@ -146,7 +158,7 @@ enum class ELogVerbosity_JS : uint8
 	VeryVerbose
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptLogCategory
 {
 	GENERATED_USTRUCT_BODY()
@@ -156,7 +168,7 @@ struct FJavascriptLogCategory
 #endif
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptStreamableManager
 {
 	GENERATED_USTRUCT_BODY()
@@ -169,7 +181,7 @@ struct FJavascriptStreamableManager
 	TSharedPtr<FStreamableManager> Handle;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptStubStruct
 {
 	GENERATED_BODY()
@@ -177,7 +189,7 @@ struct FJavascriptStubStruct
 
 struct FPrivateSocketHandle;
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptSocket
 {
 	GENERATED_BODY()
@@ -185,12 +197,24 @@ struct FJavascriptSocket
 	TSharedPtr<FPrivateSocketHandle> Handle;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptInternetAddr
 {
 	GENERATED_BODY()
 
 	TSharedPtr<FInternetAddr> Handle;
+};
+
+USTRUCT(BlueprintType)
+struct FJavscriptProperty
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString Type;
+
+	UPROPERTY()
+	FString Name;
 };
 
 UCLASS()
@@ -320,7 +344,7 @@ public:
 	static UDynamicBlueprintBinding* GetDynamicBinding(UClass* Outer, TSubclassOf<UDynamicBlueprintBinding> BindingObjectClass);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
-	static void HandleSeamlessTravelPlayer(AGameMode* GameMode, AController*& C);
+	static void HandleSeamlessTravelPlayer(AGameModeBase* GameMode, AController*& C);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static void SetRootComponent(AActor* Actor, USceneComponent* Component);
@@ -338,7 +362,7 @@ public:
 	static FString ReadStringFromFile(UObject* Object, FString Filename);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
-	static bool WriteStringToFile(UObject* Object, FString Filename, const FString& Data);
+	static bool WriteStringToFile(UObject* Object, FString Filename, const FString& Data, EJavascriptEncodingOptions::Type EncodingOptions);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
 	static FString GetDir(UObject* Object, FString WhichDir);
@@ -431,12 +455,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void SetObjectFlags(UObject* Obj, int32 Flags);
-
+	
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static void ClearFlags(UObject* Obj);
-
-	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static int32 GetMaskedFlags(UObject* Obj);
+	static void SetActorFlags(AActor* Actor, int32 Flags);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static float GetLastRenderTime(AActor* Actor);
@@ -496,6 +517,9 @@ public:
 	static TArray<UField*> GetFields(const UObject* Object, bool bIncludeSuper);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static TArray<FJavscriptProperty> GetStructProperties(const FString StructName, bool bIncludeSuper);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static int32 GetFunctionParmsSize(UFunction* Function);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
@@ -530,6 +554,12 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static bool IsGeneratedByBlueprint(UClass* InClass);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static bool IsPendingKill(AActor* InActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static FBox GetWorldBounds(UWorld* InWorld);
 
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "Scripting | Javascript", meta = (CustomStructureParam = "CustomStruct"))
 	static void CallJS(FJavascriptFunction Function, const FJavascriptStubStruct& CustomStruct);

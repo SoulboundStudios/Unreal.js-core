@@ -5,6 +5,7 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "Translator.h"
 #include "JavascriptStats.h"
 #include "UObject/GCObject.h"
+#include "V8PCH.h"
 
 using namespace v8;
 
@@ -344,12 +345,17 @@ struct FDelegateManager : IDelegateManager
 			if (!d->IsValid())
 			{
 				it.RemoveCurrent();
+				d.Reset();
 			}
 		}
 	}
 
 	void PurgeAllDelegates()
 	{
+		for (auto& d : Delegates)
+		{
+			d.Reset();
+		}
 		Delegates.Empty();
 	}
 
@@ -390,6 +396,17 @@ namespace v8
 	{
 		return new FDelegateManager(isolate);
 	}
+}
+
+void UJavascriptDelegate::BeginDestroy()
+{
+	const bool bIsClassDefaultObject = IsTemplate(RF_ClassDefaultObject);
+	if (!bIsClassDefaultObject)
+	{
+		JavascriptDelegate.Reset();
+	}
+
+	Super::BeginDestroy();
 }
 
 void UJavascriptDelegate::Fire()

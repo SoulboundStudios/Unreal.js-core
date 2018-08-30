@@ -59,7 +59,7 @@ TSharedRef<SWidget> UJavascriptWindow::RebuildWidget()
 				Content == nullptr ? SNullWidget::NullWidget : Content->TakeWidget()
 			];
 
-	return BuildDesignTimeWidget(MyWindow.ToSharedRef());
+	return MyWindow.ToSharedRef();
 }
 
 void UJavascriptWindow::MoveWindowTo(FVector2D NewPosition)

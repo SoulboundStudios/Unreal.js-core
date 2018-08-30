@@ -1,15 +1,20 @@
 #include "JavascriptComponent.h"
 #include "JavascriptIsolate.h"
 #include "JavascriptContext.h"
+#include "JavascriptStats.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "V8PCH.h"
-#include "UnrealEngine.h"
 #include "IV8.h"
+
+
+DECLARE_CYCLE_STAT(TEXT("Javascript Component Tick Time"), STAT_JavascriptComponentTickTime, STATGROUP_Javascript);
 
 UJavascriptComponent::UJavascriptComponent(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickInterval = 0.03f;
 	bTickInEditor = false;
 	bAutoActivate = true;
 	bWantsInitializeComponent = true;
@@ -23,6 +28,7 @@ void UJavascriptComponent::OnRegister()
 		if (GetWorld() && ((GetWorld()->IsGameWorld() && !GetWorld()->IsPreviewWorld()) || bActiveWithinEditor))
 		{
 			auto Isolate = NewObject<UJavascriptIsolate>();
+			Isolate->Init(false);
 			auto Context = Isolate->CreateContext();
 
 			JavascriptContext = Context;
@@ -71,6 +77,8 @@ void UJavascriptComponent::TickComponent(float DeltaTime, enum ELevelTick TickTy
 {
 	check(bRegistered);
 
+	SCOPE_CYCLE_COUNTER(STAT_JavascriptComponentTickTime);
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	OnTick.ExecuteIfBound(DeltaTime);
@@ -78,7 +86,7 @@ void UJavascriptComponent::TickComponent(float DeltaTime, enum ELevelTick TickTy
 
 void UJavascriptComponent::ForceGC()
 {
-	JavascriptContext->RunScript(TEXT("gc();"));
+	JavascriptContext->RequestV8GarbageCollection();
 }
 
 void UJavascriptComponent::Expose(FString ExposedAs, UObject* Object)

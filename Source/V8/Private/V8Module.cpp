@@ -7,6 +7,7 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "IV8.h"
 #include "JavascriptStats.h"
 #include "JavascriptSettings.h"
+#include "Containers/Ticker.h"
 
 DEFINE_STAT(STAT_V8IdleTask);
 DEFINE_STAT(STAT_JavascriptDelegate);
@@ -110,6 +111,20 @@ public:
 		return platform_->MonotonicallyIncreasingTime();
 	}
 
+#if V8_MAJOR_VERSION > 5 && V8_MINOR_VERSION > 3
+	virtual double CurrentClockTimeMillis()
+	{
+		return platform_->CurrentClockTimeMillis();
+	}
+#endif
+
+#if V8_MAJOR_VERSION > 5
+	v8::TracingController* GetTracingController() override
+	{
+		return platform_->GetTracingController();
+	}
+#endif
+
 	void RunIdleTasks(float Budget)
 	{
 		float Start = FPlatformTime::Seconds();
@@ -161,7 +176,7 @@ public:
 		const UJavascriptSettings& Settings = *GetDefault<UJavascriptSettings>();
 		Settings.Apply();
 
-		V8::InitializeICU();
+		V8::InitializeICUDefaultLocation(nullptr);
 		V8::InitializePlatform(&platform_);
 		V8::Initialize();
 
@@ -195,7 +210,7 @@ public:
 
 	static FString GetPluginScriptsDirectory4()
 	{
-		return FPaths::GamePluginsDir() / "UnrealJS/Content/Scripts/";
+		return FPaths::ProjectPluginsDir() / "UnrealJS/Content/Scripts/";
 	}
 
 	static FString GetPluginScriptsDirectory5()
@@ -210,7 +225,7 @@ public:
 
 	static FString GetGameScriptsDirectory()
 	{
-		return FPaths::GameContentDir() / "Scripts/";
+		return FPaths::ProjectContentDir() / "Scripts/";
 	}
 
 	virtual void AddGlobalScriptSearchPath(const FString& Path) override

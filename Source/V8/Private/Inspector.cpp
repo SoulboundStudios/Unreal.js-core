@@ -41,6 +41,8 @@ typedef FTickableGameObject FTickableAnyObject;
 #include "Translator.h"
 #include "IV8.h"
 
+using namespace v8;
+
 namespace {
 	class AgentImpl : public v8_inspector::V8Inspector::Channel, public TSharedFromThis<AgentImpl>
 	{
@@ -296,7 +298,7 @@ public:
 			Isolate::Scope isolate_scope(isolate_);
 			Context::Scope context_scope(InContext);
 
-			TryCatch try_catch;
+			TryCatch try_catch(isolate_);
 
 			auto source = TEXT("'log error warn info void assert'.split(' ').forEach(x => { let o = console[x].bind(console); let y = $console[x].bind($console); console['$'+x] = o; console[x] = function () { y(...arguments); return o(...arguments); }})");
 			auto script = v8::Script::Compile(I.String(source));
@@ -345,7 +347,7 @@ public:
 			Isolate::Scope isolate_scope(isolate_);
 			Context::Scope context_scope(context());
 
-			TryCatch try_catch;
+			TryCatch try_catch(isolate_);
 
 			auto console = context()->Global()->Get(I.Keyword("console")).As<v8::Object>();
 

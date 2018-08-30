@@ -132,6 +132,7 @@ void FJavascriptEditorModule::StartupModule()
 		PatchReimportRule();
 
 		auto Isolate = NewObject<UJavascriptIsolate>();
+		Isolate->Init(true);
 		auto Context = Isolate->CreateContext();
 	
 		JavascriptContext = Context;
@@ -182,14 +183,12 @@ void FJavascriptEditorModule::Unregister()
 	Extensions.Empty();
 
 	JavascriptContext->RunScript(TEXT("this['$exit'] && this['$exit']()"));
-	JavascriptContext->RunScript(TEXT("gc()"));
+	JavascriptContext->RequestV8GarbageCollection();
 
 	JavascriptContext->JavascriptContext.Reset();
-	
-	JavascriptContext->RemoveFromRoot();
-	Tick->RemoveFromRoot();		
 
-	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);	
+	JavascriptContext->RemoveFromRoot();
+	Tick->RemoveFromRoot();
 }
 #endif
 

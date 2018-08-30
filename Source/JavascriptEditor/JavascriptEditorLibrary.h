@@ -22,7 +22,7 @@ enum class EJavascriptWidgetMode : uint8
 	WM_None = 255,
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptTransaction
 {
 	GENERATED_BODY()
@@ -38,7 +38,7 @@ public:
 #endif
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptWorkspaceItem
 {
 	GENERATED_BODY()
@@ -49,7 +49,7 @@ public:
 #endif
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptHitProxy
 {
 	GENERATED_BODY()
@@ -57,7 +57,7 @@ struct FJavascriptHitProxy
 	class HHitProxy* HitProxy;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptViewportClick
 {
 	GENERATED_BODY()
@@ -72,7 +72,7 @@ struct FJavascriptViewportClick
 	const FViewportClick* Click;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptPDI
 {
 	GENERATED_BODY()
@@ -90,7 +90,7 @@ struct FJavascriptPDI
 // forward decl
 class FExtensibilityManager;
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FJavascriptExtensibilityManager
 {
 	GENERATED_BODY()
@@ -105,6 +105,44 @@ public:
 	TSharedPtr<FExtensibilityManager> Handle;
 #endif
 };
+
+/** The severity of the message type */
+UENUM()
+namespace EJavascriptMessageSeverity
+{
+	/** Ordered according to their severity */
+	enum Type
+	{
+		CriticalError = 0,
+		Error = 1,
+		PerformanceWarning = 2,
+		Warning = 3,
+		Info = 4,	// Should be last
+	};
+}
+
+/**
+* The RHI's feature level indicates what level of support can be relied upon.
+* Note: these are named after graphics API's like ES2 but a feature level can be used with a different API (eg ERHIFeatureLevel::ES2 on D3D11)
+* As long as the graphics API supports all the features of the feature level (eg no ERHIFeatureLevel::SM5 on OpenGL ES2)
+*/
+
+UENUM()
+namespace EJavascriptRHIFeatureLevel
+{
+	enum Type
+	{
+		/** Feature level defined by the core capabilities of OpenGL ES2. */
+		ES2,
+		/** Feature level defined by the core capabilities of OpenGL ES3.1 & Metal/Vulkan. */
+		ES3_1,
+		/** Feature level defined by the capabilities of DX10 Shader Model 4. */
+		SM4,
+		/** Feature level defined by the capabilities of DX11 Shader Model 5. */
+		SM5,
+		Num
+	};
+}
 
 /**
  * 
@@ -284,7 +322,7 @@ class JAVASCRIPTEDITOR_API UJavascriptEditorLibrary : public UBlueprintFunctionL
 	static void DrawWireDiamond(const FJavascriptPDI& PDI, const FTransform& Transform, float Size, const FLinearColor& InColor, ESceneDepthPriorityGroup DepthPriority);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static void DrawPolygon(const FJavascriptPDI& PDI, const TArray<FVector>& Verts, const FLinearColor& InColor, ESceneDepthPriorityGroup DepthPriority);
+	static void DrawPolygon(const FJavascriptPDI& PDI, const TArray<FVector>& Verts, const FLinearColor& InColor, ESceneDepthPriorityGroup DepthPriority, EJavascriptRHIFeatureLevel::Type RHIFeatureLevel);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void SetHitProxy(const FJavascriptPDI& PDI, const FName& Name);
@@ -360,6 +398,9 @@ class JAVASCRIPTEDITOR_API UJavascriptEditorLibrary : public UBlueprintFunctionL
 	static FJavascriptExtensibilityManager GetToolBarExtensibilityManager(FName What);
 
 	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
+	static FJavascriptUICommandList GetLevelEditorActions();
+
+	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
 	static void AddExtender(FJavascriptExtensibilityManager Manager, FJavascriptExtender Extender);
 	
 	UFUNCTION(BlueprintCallable, Category = "Javascript | Editor")
@@ -394,5 +435,17 @@ class JAVASCRIPTEDITOR_API UJavascriptEditorLibrary : public UBlueprintFunctionL
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static bool MarkPackageDirty(UObject* InObject);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void CreateLogListing(const FName& InLogName, const FText& InLabel);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static FJavascriptSlateWidget CreateLogListingWidget(const FName& InLogName);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static void AddLogListingMessage(const FName& InLogName, EJavascriptMessageSeverity::Type InSeverity, const FString& LogText);
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
+	static UEditorEngine* GetEngine();
 #endif
 };

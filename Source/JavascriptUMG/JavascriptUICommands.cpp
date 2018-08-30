@@ -1,8 +1,9 @@
 #include "JavascriptUICommands.h"
+#include "JavascriptMenuLibrary.h"
 #include "Framework/Commands/Commands.h"
 #include "Modules/ModuleVersion.h"
 
-PRAGMA_DISABLE_OPTIMIZATION
+//PRAGMA_DISABLE_OPTIMIZATION
 
 UJavascriptUICommands::UJavascriptUICommands(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer), bRegistered(false)
@@ -45,19 +46,7 @@ void UJavascriptUICommands::Initialize()
 		}
 		else
 		{
-			FJavascriptUICommandInfo CommandInfo;
-
-			UI_COMMAND_Function(
-				BindingContext.Handle.Get(),
-				CommandInfo.Handle,
-				TEXT(""),
-				*info.Id,
-				*FString::Printf(TEXT("%s_Tooltip"), *info.Id),
-				TCHAR_TO_ANSI(*FString::Printf(TEXT(".%s"), *info.Id)),
-				*info.FriendlyName,
-				*info.Description,
-				EUserInterfaceActionType::Type(info.ActionType.GetValue()),
-				info.DefaultChord);
+			FJavascriptUICommandInfo CommandInfo = UJavascriptMenuLibrary::UI_COMMAND_Function(BindingContext, info);
 
 			CommandInfos.Add(CommandInfo);
 		}
@@ -128,6 +117,13 @@ void UJavascriptUICommands::Bind(FUICommandList* CommandList)
 void UJavascriptUICommands::Unbind(FUICommandList* CommandList)
 {
 	// unbind is not supported, just rebind again!
+	for (auto CommandInfo : CommandInfos)
+	{
+		if (CommandList->IsActionMapped(CommandInfo.Handle))
+		{
+			CommandList->UnmapAction(CommandInfo.Handle);
+		}
+	}
 }
 
 FJavascriptUICommandInfo UJavascriptUICommands::GetAction(FString Id)
@@ -146,4 +142,4 @@ FJavascriptUICommandInfo UJavascriptUICommands::GetAction(FString Id)
 	return FJavascriptUICommandInfo();
 }
 
-PRAGMA_ENABLE_OPTIMIZATION
+//PRAGMA_ENABLE_OPTIMIZATION

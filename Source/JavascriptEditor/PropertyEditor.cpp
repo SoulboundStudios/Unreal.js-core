@@ -38,7 +38,7 @@ TSharedRef<SWidget> UPropertyEditor::RebuildWidget()
 {
 	if (IsDesignTime())
 	{
-		return BuildDesignTimeWidget(SNew(SBox)
+		return RebuildDesignWidget(SNew(SBox)
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			[
@@ -65,7 +65,11 @@ TSharedRef<SWidget> UPropertyEditor::RebuildWidget()
 		}
 
 		View->OnFinishedChangingProperties().AddUObject(this, &UPropertyEditor::OnFinishedChangingProperties);
-		
+		bool bEditable = !bReadOnly;
+		View->SetIsPropertyEditingEnabledDelegate(FIsPropertyEditingEnabled::CreateLambda([bEditable]() {
+			return bEditable;
+		}));
+
 		return View.ToSharedRef();
 	}
 }

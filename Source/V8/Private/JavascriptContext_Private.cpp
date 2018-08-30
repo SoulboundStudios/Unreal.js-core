@@ -15,9 +15,11 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "Paths.h"
 #include "JavascriptIsolate_Private.h"
 #include "PropertyPortFlags.h"
+#include "ScriptMacros.h"
 
 #if WITH_EDITOR
 #include "TypingGenerator.h"
+#include "Kismet2/KismetReinstanceUtilities.h"
 #endif
 
 #include "Helpers.h"
@@ -90,7 +92,7 @@ static void SetFunctionFlags(UFunction* Function, const TArray<FString>& Flags)
 {
 	static struct FKeyword {
 		const TCHAR* Keyword;
-		int32 Flags;
+		EFunctionFlags Flags;
 	} Keywords[] = {
 		{ TEXT("Exec"), FUNC_Exec },
 		{ TEXT("Server"), FUNC_Net | FUNC_NetServer },
@@ -135,7 +137,7 @@ static void SetClassFlags(UClass* Class, const TArray<FString>& Flags)
 {
 	static struct FKeyword {
 		const TCHAR* Keyword;
-		uint64 Flags;
+		EClassFlags Flags;
 	} Keywords[] = {
 		{ TEXT("Abstract"), CLASS_Abstract },
 		{ TEXT("DefaultConfig"), CLASS_DefaultConfig },
@@ -189,7 +191,7 @@ static void SetStructFlags(UScriptStruct* Struct, const TArray<FString>& Flags)
 {
 	static struct FKeyword {
 		const TCHAR* Keyword;
-		uint64 Flags;
+		EStructFlags Flags;
 	} Keywords[] = {
 		{ TEXT("Atomic"), STRUCT_Atomic },
 		{ TEXT("Immutable"), STRUCT_Immutable }
@@ -408,21 +410,17 @@ static UProperty* CreateProperty(UObject* Outer, FName Name, const TArray<FStrin
 		{
 			auto q = NewObject<UMapProperty>(Outer, Name);
 			FString Left, Right;
-			if (Type.Split(TEXT(":"), &Left, &Right))
+			if (Type.Split(TEXT("::"), &Left, &Right))
 			{
 				auto Key = FName(*Name.ToString().Append(TEXT("_Key")));
-				if (auto KeyProperty = CreateProperty(q, Key, Decorators, Left, false, false, false))
+				TArray<FString> Empty;
+				if (auto KeyProperty = CreateProperty(q, Key, Empty, Left, false, false, false))
 				{
 					q->KeyProp = KeyProperty;
-					q->KeyProp->SetPropertyFlags(CPF_HasGetValueTypeHash);
 					auto Value = FName(*Name.ToString().Append(TEXT("_Value")));
 					if (auto ValueProperty = CreateProperty(q, Value, Decorators, Right, bIsArray, bIsSubclass, false))
 					{
 						q->ValueProp = ValueProperty;
-						if (q->ValueProp && q->ValueProp->HasAnyPropertyFlags(CPF_ContainsInstancedReference))
-						{
-							q->ValueProp->SetPropertyFlags(CPF_ContainsInstancedReference);
-						}
 					}
 					else
 						q->MarkPendingKill();
@@ -522,20 +520,19 @@ static UProperty* DuplicateProperty(UObject* Outer, UProperty* Property, FName N
 	return SetupProperty(Clone());
 };
 
-void UJavascriptGeneratedFunction::Thunk(FFrame& Stack, RESULT_DECL)
+void UJavascriptGeneratedFunction::Thunk(UObject* Context, FFrame& Stack, RESULT_DECL)
 {
 	auto Function = static_cast<UJavascriptGeneratedFunction*>(Stack.CurrentNativeFunction);
-
 	auto ProcessInternal = [&](FFrame& Stack, RESULT_DECL)
 	{
 		if (Function->JavascriptContext.IsValid())
 		{
-			auto Context = Function->JavascriptContext.Pin();
+			auto Ctx = Function->JavascriptContext.Pin();
 
-			Isolate::Scope isolate_scope(Context->isolate());
-			HandleScope handle_scope(Context->isolate());
+			Isolate::Scope isolate_scope(Ctx->isolate());
+			HandleScope handle_scope(Ctx->isolate());
 
-			bool bCallRet = Context->CallProxyFunction(Function->GetOuter(), this, Function, Stack.Locals);
+			bool bCallRet = Ctx->CallProxyFunction(Function->GetOuter(), P_THIS, Function, Stack.Locals);
 			if (!bCallRet)
 			{
 				return;
@@ -605,7 +602,7 @@ void UJavascriptGeneratedFunction::Thunk(FFrame& Stack, RESULT_DECL)
 			Frame = (uint8*)FMemory_Alloca(Function->PropertiesSize);
 			FMemory::Memzero(Frame, Function->PropertiesSize);
 		}
-		FFrame NewStack(this, Function, Frame, &Stack, Function->Children);
+		FFrame NewStack(P_THIS, Function, Frame, &Stack, Function->Children);
 		FOutParmRec** LastOut = &NewStack.OutParms;
 		UProperty* Property;
 
@@ -952,6 +949,7 @@ public:
 					if (proxy.IsEmpty() || !proxy->IsObject())
 					{
 						I.Throw(TEXT("Invalid proxy : construct class"));
+						//@todo : assertion
 						return;
 					}
 
@@ -1008,7 +1006,7 @@ public:
 				auto MakeFunction = [&]() {
 					Function = NewObject<UJavascriptGeneratedFunction>(Class, NewFunctionName, RF_Public);
 					Function->JavascriptContext = Context->AsShared();
-					Function->RepOffset = MAX_uint16;
+					//Function->RepOffset = MAX_uint16;
 					Function->ReturnValueOffset = MAX_uint16;
 					Function->FirstPropertyToInit = NULL;
 
@@ -1142,13 +1140,13 @@ public:
 
 				FinalizeFunction(Function);
 
-				Function->SetNativeFunc((Native)&UJavascriptGeneratedFunction::Thunk);
+				Function->SetNativeFunc(&UJavascriptGeneratedFunction::Thunk);
 
 				Function->Next = Class->Children;
 				Class->Children = Function;
 
 				// Add the function to it's owner class function name -> function map
-				Class->AddFunctionToFunctionMap(Function);
+				Class->AddFunctionToFunctionMap(Function, Function->GetFName());
 
 				return true;
 			};
@@ -1244,10 +1242,72 @@ public:
 #endif
 		};
 
+		auto fn1 = [](const FunctionCallbackInfo<Value>& info) {
+#if WITH_EDITOR
+			auto Context = reinterpret_cast<FJavascriptContextImplementation*>((Local<External>::Cast(info.Data()))->Value());
+
+			auto isolate = info.GetIsolate();
+
+			FIsolateHelper I(isolate);
+
+			HandleScope scope(isolate);
+
+			auto Opts = info[0]->ToObject();
+			auto Class = (UBlueprintGeneratedClass*)UClassFromV8(isolate, Opts->Get(I.Keyword("SelfClass")));
+
+			// Recreate the CDO after rebind properties.
+			TMap<UClass*, UClass*> OldToNewMap;
+			FBlueprintCompileReinstancer::MoveCDOToNewClass(Class, OldToNewMap, true);
+			Class->ClassDefaultObject = NULL;
+
+			Class->Children = nullptr;
+			auto PropertyDecls = Opts->Get(I.Keyword("Properties"));
+			if (!PropertyDecls.IsEmpty() && PropertyDecls->IsArray())
+			{
+				auto arr = Handle<Array>::Cast(PropertyDecls);
+				auto len = arr->Length();
+
+				for (decltype(len) Index = 0; Index < len; ++Index)
+				{
+					auto PropertyDecl = arr->Get(len - Index - 1);
+					if (PropertyDecl->IsObject())
+					{
+						auto Property = CreatePropertyFromDecl(I, Class, PropertyDecl);
+
+						if (Property)
+						{
+							Class->AddCppProperty(Property);
+
+							if (Property->HasAnyPropertyFlags(CPF_Net))
+							{
+								Class->NumReplicatedProperties++;
+							}
+						}
+					}
+				}
+			}
+
+			Class->Bind();
+			Class->StaticLink(true);
+
+			// @note: caching target class's proxy function and adjust to reexported class.
+			auto prev_v8_template = Context->ExportObject(Class);
+			auto ProxyFunctions = prev_v8_template->ToObject()->Get(I.Keyword("proxy"));
+
+			Context->Environment->PublicExportClass(Class);
+
+			auto aftr_v8_template = Context->ExportObject(Class);
+			aftr_v8_template->ToObject()->Set(I.Keyword("proxy"), ProxyFunctions);
+
+			Class->GetDefaultObject(true);
+#endif
+		};
+
 		auto global = context()->Global();
 		auto self = External::New(isolate(), this);
 
 		global->Set(V8_KeywordString(isolate(), "CreateClass"), FunctionTemplate::New(isolate(), fn, self)->GetFunction());
+		global->Set(V8_KeywordString(isolate(), "RebindClassProperties"), FunctionTemplate::New(isolate(), fn1, self)->GetFunction());
 	}
 
 	void ExportUnrealEngineStructs()
@@ -1316,10 +1376,60 @@ public:
 			info.GetReturnValue().Set(FinalClass);
 		};
 
+		auto fn1 = [](const FunctionCallbackInfo<Value>& info) {
+#if WITH_EDITOR
+			auto Context = reinterpret_cast<FJavascriptContextImplementation*>((Local<External>::Cast(info.Data()))->Value());
+
+			auto isolate = info.GetIsolate();
+
+			FIsolateHelper I(isolate);
+
+			HandleScope scope(isolate);
+
+			auto Opts = info[0]->ToObject();
+			auto Struct = (UScriptStruct*)UClassFromV8(isolate, Opts->Get(I.Keyword("SelfStruct")));
+
+			Struct->Children = nullptr;
+			auto PropertyDecls = Opts->Get(I.Keyword("Properties"));
+			if (!PropertyDecls.IsEmpty() && PropertyDecls->IsArray())
+			{
+				auto arr = Handle<Array>::Cast(PropertyDecls);
+				auto len = arr->Length();
+
+				for (decltype(len) Index = 0; Index < len; ++Index)
+				{
+					auto PropertyDecl = arr->Get(len - Index - 1);
+					if (PropertyDecl->IsObject())
+					{
+						auto Property = CreatePropertyFromDecl(I, Struct, PropertyDecl);
+
+						if (Property)
+						{
+							Struct->AddCppProperty(Property);
+						}
+					}
+				}
+			}
+
+			Struct->Bind();
+			Struct->StaticLink(true);
+
+			// @note: caching target class's proxy function and adjust to reexported class.
+			auto prev_v8_template = Context->ExportObject(Struct);
+			auto ProxyFunctions = prev_v8_template->ToObject()->Get(I.Keyword("proxy"));
+
+			Context->Environment->PublicExportStruct(Struct);
+
+			auto aftr_v8_template = Context->ExportObject(Struct);
+			aftr_v8_template->ToObject()->Set(I.Keyword("proxy"), ProxyFunctions);
+#endif
+		};
+
 		auto global = context()->Global();
 		auto self = External::New(isolate(), this);
 
 		global->Set(V8_KeywordString(isolate(), "CreateStruct"), FunctionTemplate::New(isolate(), fn, self)->GetFunction());
+		global->Set(V8_KeywordString(isolate(), "RebindStructProperties"), FunctionTemplate::New(isolate(), fn1, self)->GetFunction());
 	}
 
 	void ExposeRequire()
@@ -1356,7 +1466,7 @@ public:
 				FString Text;
 				if (FFileHelper::LoadFileToString(Text, *script_path))
 				{
-					Text = FString::Printf(TEXT("(function (global,__dirname) { var module = { exports : {}, filename : __dirname }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s'));"), *Text, *script_path);
+					Text = FString::Printf(TEXT("(function (global, __filename, __dirname) { var module = { exports : {}, filename : __filename }, exports = module.exports; (function () { %s\n })()\n;return module.exports;}(this,'%s', '%s'));"), *Text, *script_path, *FPaths::GetPath(script_path));
 					auto exports = Self->RunScript(full_path, Text, 0);
 					if (exports.IsEmpty())
 					{
@@ -1499,21 +1609,6 @@ public:
 				return Dirs;
 			};
 
-			auto load_node_modules = [&](FString base_path)
-			{
-				TArray<FString> paths = load_module_paths(base_path);
-				auto founded = false;
-				for (const auto& path : paths)
-				{
-					if (inner2(path / TEXT("node_modules")))
-					{
-						founded = true;
-						break;
-					}
-				}
-				return founded;
-			};
-
 			auto current_script_path = FPaths::GetPath(StringFromV8(StackTrace::CurrentStackTrace(isolate, 1, StackTrace::kScriptName)->GetFrame(0)->GetScriptName()));
 			current_script_path = URLToLocalPath(current_script_path);
 
@@ -1552,7 +1647,7 @@ public:
 		global->Set(V8_KeywordString(isolate(), "require"), FunctionTemplate::New(isolate(), fn, self)->GetFunction());
 		global->Set(V8_KeywordString(isolate(), "purge_modules"), FunctionTemplate::New(isolate(), fn2, self)->GetFunction());
 
-		auto getter = [](Local<String> property, const PropertyCallbackInfo<Value>& info) {
+		AccessorNameGetterCallback getter = [](Local<Name> property, const PropertyCallbackInfo<Value>& info) {
 			auto isolate = info.GetIsolate();
 			HandleScope scope(isolate);
 
@@ -1571,7 +1666,7 @@ public:
 
 			info.GetReturnValue().Set(out);
 		};
-		global->SetAccessor(V8_KeywordString(isolate(), "modules"), getter, 0, self);
+		global->SetAccessor(context(), V8_KeywordString(isolate(), "modules"), getter, 0, self);
 	}
 
 	void ExposeMemory2()
@@ -1730,9 +1825,7 @@ public:
 		auto Script = ReadScriptFile(Filename);
 
 		auto ScriptPath = GetScriptFileFullPath(Filename);
-
-		auto Text = FString::Printf(TEXT("(function (global,__dirname) { %s\n;}(this,'%s'));"), *Script, *ScriptPath);
-
+		auto Text = FString::Printf(TEXT("(function (global,__filename,__dirname) { %s\n;}(this,'%s','%s'));"), *Script, *ScriptPath, *FPaths::GetPath(ScriptPath));
 		return RunScript(ScriptPath, Text, 0);
 	}
 
@@ -1757,13 +1850,19 @@ public:
 		return str;
 	}
 
+	void RequestV8GarbageCollection()
+	{
+		// @todo: using 'ForTesting' function
+		isolate()->RequestGarbageCollectionForTesting(Isolate::kFullGarbageCollection);
+	}
+
 	// Should be guarded with proper handle scope
 	Local<Value> RunScript(const FString& Filename, const FString& Script, int line_offset = 0)
 	{
 		Isolate::Scope isolate_scope(isolate());
 		Context::Scope context_scope(context());
 
-		TryCatch try_catch;
+		TryCatch try_catch(isolate());
 		try_catch.SetVerbose(true);
 
 		auto Path = Filename;
@@ -1806,17 +1905,17 @@ public:
 	void Expose(FString RootName, UObject* Object)
 	{
 		WKOs.Add(RootName, Object);
-
-		auto RootGetter = [](Local<String> property, const PropertyCallbackInfo<Value>& info) {
+		AccessorNameGetterCallback RootGetter = [](Local<Name> property, const PropertyCallbackInfo<Value>& info) {
 			auto isolate = info.GetIsolate();
 			info.GetReturnValue().Set(info.Data());
 		};
 
 		Isolate::Scope isolate_scope(isolate());
 		HandleScope handle_scope(isolate());
-		Context::Scope context_scope(context());
+		auto ctx = context();
+		Context::Scope context_scope(ctx);
 
-		context()->Global()->SetAccessor(V8_KeywordString(isolate(), RootName), RootGetter, 0, ExportObject(Object));
+		ctx->Global()->SetAccessor(ctx, V8_KeywordString(isolate(), RootName), RootGetter, 0, ExportObject(Object));
 	}
 
 	Local<Value> ExportObject(UObject* Object, bool bForce = false) override
@@ -1889,7 +1988,7 @@ public:
 						FString ParameterWithValue = Parameter;
 						if (!MetadataCppDefaultValue.IsEmpty())
 						{
-							const uint32 ExportFlags = PPF_Localized;
+							const uint32 ExportFlags = PPF_None;
 							auto Buffer = It->ContainerPtrToValuePtr<uint8>(Parms);
 							const TCHAR* Result = It->ImportText(*MetadataCppDefaultValue, Buffer, ExportFlags, NULL);
 							if (Result)
@@ -2164,7 +2263,7 @@ FJavascriptContext* FJavascriptContext::Create(TSharedPtr<FJavascriptIsolate> In
 
 inline void FJavascriptContextImplementation::AddReferencedObjects(UObject * InThis, FReferenceCollector & Collector)
 {
-	Public_RunScript(TEXT("gc();"), false);
+	RequestV8GarbageCollection();
 
 	// All objects
 	for (auto It = ObjectToObjectMap.CreateIterator(); It; ++It)
@@ -2177,21 +2276,21 @@ inline void FJavascriptContextImplementation::AddReferencedObjects(UObject * InT
 		}
 		else
 		{
-			Collector.AddReferencedObject(It.Key(), InThis);
+			Collector.AddReferencedObject(Object, InThis);
 		}
 	}
 
 	// All structs
 	for (auto It = MemoryToObjectMap.CreateIterator(); It; ++It)
 	{
-		auto Struct = It.Key()->Struct;
-		if (Struct->IsPendingKill())
+		TSharedPtr<FStructMemoryInstance> StructScript = It.Key();
+		if (!StructScript.IsValid() || StructScript->Struct->IsPendingKill())
 		{
 			It.RemoveCurrent();
 		}
 		else
 		{
-			Collector.AddReferencedObject(Struct, InThis);
+			Collector.AddReferencedObject(StructScript->Struct, InThis);
 		}
 	}
 }

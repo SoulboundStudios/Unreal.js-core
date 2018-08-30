@@ -71,7 +71,7 @@
 
         let RE_class = /\s*class\s+(\w+)(\s+\/\*([^\*]*)\*\/)?(\s+extends\s+([^\s\{]+))?/
         let RE_func = /(\w+)\s*\(([^.)]*)\)\s*(\/\*([^\*]*)\*\/)?.*/
-        function register(target, template) {
+        function register(target, template, includeProperty=true) {
             target = target || {}
             let bindings = []
 
@@ -97,8 +97,8 @@
                 let m = /\s*(\w+)\s*(\/\*([^\*]*)\*\/)?\s*/.exec(x)
                 if (m) {
                     let arr = (m[3] || '').split('+').map((x) => x.trim())
-                    let type = arr.pop()
-                    let is_array = false
+                    let type = arr.pop()                        
+                    let is_array = false                    
                     let is_subclass = false                    
                     let is_map = false
                     if (/\[\]$/.test(type)) {
@@ -111,7 +111,12 @@
                     }
                     if(/\{\}$/.test(type)) {
                         is_map = true
-                        type = type.substr(0, type.length - 2)
+                        let kv = (m[3] || '').split('::').map(x => x.trim());
+                        let tv = _.map(kv, t => t.split('+').map(x => x.trim()));
+                        type = tv[0].pop() + '::' + tv[1].pop();           
+                        type = type.substr(0, type.length - 2)                        
+                        arr = _.concat(tv[0],  tv[1]);
+
                     }
                     if (_.isFunction(target[type])) {
                         let src = String(target[type])
@@ -207,7 +212,7 @@
                     Functions: proxy,
                     StructFlags: classFlags,
                     Outer: thePackage,
-                    Properties: properties
+                    Properties: includeProperty ? properties : []
                 });
             }
             else {
@@ -216,7 +221,7 @@
                     Functions: proxy,
                     ClassFlags: classFlags,
                     Outer: thePackage,
-                    Properties: properties
+                    Properties: includeProperty ? properties : []
                 });
             }
 

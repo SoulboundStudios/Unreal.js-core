@@ -16,10 +16,14 @@ DEFINE_LOG_CATEGORY(Javascript);
 UJavascriptIsolate::UJavascriptIsolate(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
+}
+
+void UJavascriptIsolate::Init(bool bIsEditor)
+{
 	const bool bIsClassDefaultObject = IsTemplate(RF_ClassDefaultObject);
 	if (!bIsClassDefaultObject)
 	{
-		JavascriptIsolate = TSharedPtr<FJavascriptIsolate>(FJavascriptIsolate::Create());
+		JavascriptIsolate = TSharedPtr<FJavascriptIsolate>(FJavascriptIsolate::Create(bIsEditor));
 	}
 }
 
@@ -133,6 +137,11 @@ void UJavascriptContext::RunFile(FString Filename)
 FString UJavascriptContext::RunScript(FString Script, bool bOutput)
 {
 	return JavascriptContext->Public_RunScript(Script, bOutput);	
+}
+
+void UJavascriptContext::RequestV8GarbageCollection()
+{
+	JavascriptContext->RequestV8GarbageCollection();
 }
 
 void UJavascriptContext::FindPathFile(FString TargetRootPath, FString TargetFileName, TArray<FString>& OutFiles)

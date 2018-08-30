@@ -2,6 +2,7 @@
 #include "SEditorViewport.h"
 #include "AdvancedPreviewScene.h"
 #include "Runtime/Engine/Public/Slate/SceneViewport.h"
+#include "EngineUtils.h"
 #include "Engine/Canvas.h"
 #include "OverlaySlot.h"
 #include "AssetViewerSettings.h"
@@ -41,8 +42,6 @@ public:
 		: FEditorViewportClient(nullptr,&InPreviewScene,InEditorViewportWidget), Widget(InWidget), BackgroundColor(FColor(55,55,55))
 	{
 	}
-	~FJavascriptEditorViewportClient()
-	{}
 	
 	virtual void ProcessClick(class FSceneView& View, class HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY) override
 	{
@@ -158,7 +157,7 @@ public:
             }
             
             CanvasOwner.Canvas->Canvas = &Canvas;
-            CanvasOwner.Canvas->Init(View.UnscaledViewRect.Width(), View.UnscaledViewRect.Height(), const_cast<FSceneView*>(&View));
+            CanvasOwner.Canvas->Init(View.UnscaledViewRect.Width(), View.UnscaledViewRect.Height(), const_cast<FSceneView*>(&View), &Canvas);
             CanvasOwner.Canvas->ApplySafeZoneTransform();
             
             Widget->OnDrawCanvas.Execute(CanvasOwner.Canvas, Widget.Get());
@@ -270,6 +269,11 @@ class SAutoRefreshEditorViewport : public SEditorViewport
 		: PreviewScene(FPreviewScene::ConstructionValues().SetEditor(false).AllowAudioPlayback(true))
 	{
 
+	}
+
+	~SAutoRefreshEditorViewport()
+	{
+		EditorViewportClient.Reset();
 	}
 
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override
@@ -466,7 +470,7 @@ TSharedRef<SWidget> UJavascriptEditorViewport::RebuildWidget()
 {
 	if (IsDesignTime())
 	{
-		return BuildDesignTimeWidget(SNew(SBox)
+		return RebuildDesignWidget(SNew(SBox)
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			[
@@ -487,7 +491,7 @@ TSharedRef<SWidget> UJavascriptEditorViewport::RebuildWidget()
 			}
 		}
 		
-		return BuildDesignTimeWidget(ViewportWidget.ToSharedRef());
+		return ViewportWidget.ToSharedRef();
 	}
 }
 #endif
@@ -538,6 +542,12 @@ void UJavascriptEditorViewport::OnSlotRemoved(UPanelSlot* Slot)
 			MyOverlay->RemoveSlot(Widget.ToSharedRef());
 		}
 	}
+}
+
+void UJavascriptEditorViewport::ReleaseSlateResources(bool bReleaseChildren)
+{
+	Super::ReleaseSlateResources(bReleaseChildren);
+	ViewportWidget.Reset();
 }
 
 void UJavascriptEditorViewport::SetRealtime(bool bInRealtime, bool bStoreCurrentValue)
@@ -705,13 +715,13 @@ void UJavascriptEditorViewport::DeprojectScreenToWorld(const FVector2D &ScreenPo
     {
         FSceneViewFamilyContext ViewFamily(FSceneViewFamily::ConstructionValues( ViewportWidget->EditorViewportClient->Viewport, ViewportWidget->EditorViewportClient->GetScene(), ViewportWidget->EditorViewportClient->EngineShowFlags ));
         FSceneView* View = ViewportWidget->EditorViewportClient->CalcSceneView(&ViewFamily);
-        
+		
 #if ENGINE_MINOR_VERSION >= 14
 		const auto& InvViewProjMatrix = View->ViewMatrices.GetInvViewProjectionMatrix();
 #else
 		const auto& InvViewProjMatrix = View->ViewMatrices.GetInvViewProjMatrix();
 #endif
-        FSceneView::DeprojectScreenToWorld(ScreenPosition, View->ViewRect, InvViewProjMatrix, OutRayOrigin, OutRayDirection);
+        FSceneView::DeprojectScreenToWorld(ScreenPosition, View->UnscaledViewRect, InvViewProjMatrix, OutRayOrigin, OutRayDirection);
     }
 }
 
@@ -728,7 +738,7 @@ void UJavascriptEditorViewport::ProjectWorldToScreen(const FVector &WorldPositio
 		const auto& ViewProjMatrix = View->ViewMatrices.GetViewProjMatrix();
 #endif
         
-        FSceneView::ProjectWorldToScreen(WorldPosition, View->ViewRect, ViewProjMatrix, OutScreenPosition);
+        FSceneView::ProjectWorldToScreen(WorldPosition, View->UnscaledViewRect, ViewProjMatrix, OutScreenPosition);
     }
 }
 

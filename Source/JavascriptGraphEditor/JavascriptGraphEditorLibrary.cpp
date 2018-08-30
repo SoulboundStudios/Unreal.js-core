@@ -1,5 +1,6 @@
 #include "JavascriptGraphEditorLibrary.h"
 #include "JavascriptGraphConnectionDrawingPolicy.h"
+#include "JavascriptGraphEdNode.h"
 #include "SJavascriptGraphEdNode.h"
 #include "Editor/GraphEditor/Public/SGraphPanel.h"
 
@@ -74,14 +75,64 @@ void UJavascriptGraphEditorLibrary::BreakAllPinLinks(FJavascriptEdGraphPin A)
 	}
 }
 
+FEdGraphPinType UJavascriptGraphEditorLibrary::GetPinType(FJavascriptEdGraphPin A)
+{
+	FEdGraphPinType PinType;
+	if (A.GraphPin)
+	{
+		PinType = A.GraphPin->PinType;
+	}
+
+	return PinType;
+}
+
+EJavascriptPinContainerType::Type UJavascriptGraphEditorLibrary::GetPinContainerType(FJavascriptEdGraphPin A)
+{
+	EJavascriptPinContainerType::Type ContainerType = EJavascriptPinContainerType::Type::None;
+	if (A.GraphPin)
+	{
+		
+		ContainerType = (EJavascriptPinContainerType::Type)(int32)(A.GraphPin->PinType.ContainerType);
+	}
+
+	return ContainerType;
+}
+
+void UJavascriptGraphEditorLibrary::SetPinType(FJavascriptEdGraphPin Pin, FEdGraphPinType PinType)
+{
+	if (Pin.GraphPin)
+	{
+		Pin.GraphPin->PinType = PinType;
+	}
+}
+
 FJavascriptEdGraphPin UJavascriptGraphEditorLibrary::FindPin(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection Direction)
 {
 	return FJavascriptEdGraphPin{ Node->FindPin(PinName, Direction) };
 }
 
-FString UJavascriptGraphEditorLibrary::GetPinName(FJavascriptEdGraphPin A)
+FName UJavascriptGraphEditorLibrary::GetPinName(FJavascriptEdGraphPin A)
 {
 	return A.GraphPin ? A.GraphPin->PinName : TEXT("");
+}
+
+void UJavascriptGraphEditorLibrary::SetPinInfo(FJavascriptEdGraphPin A, FName InPinName, FString InPinToolTip)
+{
+	if (A.GraphPin)
+	{
+		A.GraphPin->PinName = InPinName;
+		A.GraphPin->PinToolTip = InPinToolTip;
+	}
+}
+
+FGuid UJavascriptGraphEditorLibrary::GetPinGUID(FJavascriptEdGraphPin A)
+{
+	FGuid GUID;
+	if (A.GraphPin)
+	{
+		GUID = A.GraphPin->PinId;
+	}
+	return GUID;
 }
 
 bool UJavascriptGraphEditorLibrary::IsValid(FJavascriptEdGraphPin A)
@@ -129,19 +180,22 @@ FJavascriptArrangedWidget UJavascriptGraphEditorLibrary::FindPinGeometries(FJava
 // @unused
 FJavascriptPinWidget UJavascriptGraphEditorLibrary::FindPinToPinWidgetMap(FJavascriptDetermineLinkGeometryContainer Container, FJavascriptEdGraphPin Pin)
 {
-	FJavascriptPinWidget Widget;
+	FJavascriptPinWidget Widget = FJavascriptPinWidget();
 	
 	TSharedRef<SGraphPin>* SGraphPinHandle = Container.PinToPinWidgetMap->Find(Pin.GraphPin);
-	TSharedRef<SWidget> SWidgetHandle  = static_cast<SWidget&>(SGraphPinHandle->Get()).AsShared();
-	Widget.Handle = &SWidgetHandle;
+	if (SGraphPinHandle)
+	{
+		TSharedRef<SWidget> SWidgetHandle  = static_cast<SWidget&>(SGraphPinHandle->Get()).AsShared();
+		Widget.Handle = &SWidgetHandle;
+	}
 
 	return Widget;
 }
 // @unused
 FJavascriptArrangedWidget UJavascriptGraphEditorLibrary::GetArrangedNodes(FJavascriptDetermineLinkGeometryContainer Container, UEdGraphNode* Node)
 {
-	FJavascriptArrangedWidget Widget;
-	Widget.Handle = nullptr;
+	FJavascriptArrangedWidget Widget = FJavascriptArrangedWidget();
+
 	int32* Index = Container.NodeWidgetMap->Find(Node);
 	if (Index != NULL)
 	{
@@ -153,7 +207,7 @@ FJavascriptArrangedWidget UJavascriptGraphEditorLibrary::GetArrangedNodes(FJavas
 // @unused
 FJavascriptPinWidget UJavascriptGraphEditorLibrary::GetOutputPinWidget(FJavascriptDetermineLinkGeometryContainer Container)
 {
-	FJavascriptPinWidget Widget;
+	FJavascriptPinWidget Widget = FJavascriptPinWidget();
 	Widget.Handle = Container.OutputPinWidget;
 
 	return Widget;
@@ -245,6 +299,11 @@ void UJavascriptGraphEditorLibrary::RemovePinFromHoverSet(const FJavascriptSlate
 	{
 		SlateEdNode->GetOwnerPanel()->RemovePinFromHoverSet(Pin.GraphPin);
 	}
+}
+
+void UJavascriptGraphEditorLibrary::ResizeNode(UEdGraphNode * Node, const FVector2D & NewSize)
+{
+	Node->ResizeNode(NewSize);
 }
 
 #undef LOCTEXT_NAMESPACE

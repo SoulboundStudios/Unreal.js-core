@@ -118,7 +118,15 @@ void UJavascriptWidget::OnListenForInputAction(FName ActionName, TEnumAsByte< EI
 	{
 		FInputActionBinding NewBinding(ActionName, EventType.GetValue());
 		NewBinding.bConsumeInput = bConsume;
-		NewBinding.ActionDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::OnInputActionByName, ActionName);
+		if (EventType == IE_Pressed)
+		{
+			NewBinding.ActionDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::OnInputActionByName, ActionName);
+		}
+		else
+		{
+			NewBinding.ActionDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::OnReleaseInputActionByName, ActionName);
+		}
+
 		InputComponent->AddActionBinding(NewBinding);
 	}
 }
@@ -128,6 +136,48 @@ void UJavascriptWidget::OnInputActionByName_Implementation(FName ActionName)
 	if (OnInputActionEvent.IsBound())
 	{
 		OnInputActionEvent.Broadcast(ActionName);
+	}
+}
+
+void UJavascriptWidget::OnReleaseInputActionByName_Implementation(FName ActionName)
+{
+	if (OnReleaseActionEvent.IsBound())
+	{
+		OnReleaseActionEvent.Broadcast(ActionName);
+	}
+}
+
+void UJavascriptWidget::OnListenForInputAxis(FName AxisName, TEnumAsByte< EInputEvent > EventType, bool bConsume)
+{
+	if (!InputComponent)
+	{
+#if ENGINE_MAJOR_VERSION == 4 && ENGINE_MINOR_VERSION < 12
+		if (APlayerController* Controller = GetOwningPlayer())
+		{
+			InputComponent = NewObject< UInputComponent >(this, NAME_None, RF_Transient);
+			InputComponent->bBlockInput = bStopAction;
+			InputComponent->Priority = Priority;
+			Controller->PushInputComponent(InputComponent);
+		}
+#else
+		InitializeInputComponent();
+#endif
+	}
+
+	if (InputComponent)
+	{
+		FInputAxisBinding NewBinding(AxisName);
+		NewBinding.bConsumeInput = bConsume;
+		NewBinding.AxisDelegate.GetDelegateForManualSet().BindUObject(this, &ThisClass::OnInputAxisByName, AxisName);
+		InputComponent->AxisBindings.Add(NewBinding);
+	}
+}
+
+void UJavascriptWidget::OnInputAxisByName_Implementation(float Axis, FName AxisName)
+{
+	if (OnInputAxisEvent.IsBound())
+	{
+		OnInputAxisEvent.Broadcast(Axis, AxisName);
 	}
 }
 

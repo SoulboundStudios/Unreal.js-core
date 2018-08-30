@@ -1,6 +1,7 @@
 #include "JavascriptPropertyCustomizationLibrary.h"
 #include "IPropertyTypeCustomization.h"
 #include "IDetailChildrenBuilder.h"
+#include "JavascriptPropertyCustomization.h"
 
 #if WITH_EDITOR
 FJavascriptPropertyHandle UJavascriptPropertyCustomizationLibrary::GetChildHandle(FJavascriptPropertyHandle Parent, FName Name)
@@ -36,11 +37,11 @@ UProperty* UJavascriptPropertyCustomizationLibrary::GetProperty(FJavascriptPrope
 {
 	return Handle->GetProperty();
 }
-void UJavascriptPropertyCustomizationLibrary::SetOnPropertyValueChanged(FJavascriptPropertyHandle Handle, FJavascriptFunction Function)
+void UJavascriptPropertyCustomizationLibrary::SetOnPropertyValueChanged(FJavascriptPropertyHandle Handle, UJavascriptPropertyCustomization* Custom)
 {
 	FSimpleDelegate Delegate;
-	Delegate.BindLambda([=] () {
-		((FJavascriptFunction*)&Function)->Execute();
+	Delegate.BindLambda([Custom]() {
+		Custom->OnPropertyValueChanged.Broadcast();
 	});
 	Handle->SetOnPropertyValueChanged(Delegate);
 }
@@ -66,11 +67,11 @@ void UJavascriptPropertyCustomizationLibrary::SetFilterString(FJavascriptDetailW
 
 FJavascriptDetailWidgetRow UJavascriptPropertyCustomizationLibrary::AddChildContent(FJavascriptDetailChildrenBuilder ChildBuilder, const FText& SearchString)
 {
-	return{ &(ChildBuilder->AddChildContent(SearchString)) };
+	return{ &(ChildBuilder->AddCustomRow(SearchString)) };
 }
 FJavascriptDetailPropertyRow UJavascriptPropertyCustomizationLibrary::AddChildProperty(FJavascriptDetailChildrenBuilder ChildBuilder, FJavascriptPropertyHandle PropertyHandle)
 {
-	return{ &(ChildBuilder->AddChildProperty(PropertyHandle.PropertyHandle.ToSharedRef() )) };
+	return{ &(ChildBuilder->AddProperty(PropertyHandle.PropertyHandle.ToSharedRef() )) };
 }
 FJavascriptSlateWidget UJavascriptPropertyCustomizationLibrary::GenerateStructValueWidget(FJavascriptDetailChildrenBuilder ChildBuilder, FJavascriptPropertyHandle StructPropertyHandle)
 {

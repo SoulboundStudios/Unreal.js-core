@@ -21,7 +21,6 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #include "JavascriptGeneratedClass_Native.h"
 #include "StructMemoryInstance.h"
 #include "JavascriptMemoryObject.h"
-#include "Engine/UserDefinedStruct.h"
 #include "Ticker.h"
 #include "V8PCH.h"
 #include "UObjectIterator.h"
@@ -33,6 +32,7 @@ PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 #endif
 #include "JavascriptStats.h"
 #include "IV8.h"
+#include "ConsoleDelegate.h"
 
 THIRD_PARTY_INCLUDES_START
 #include <libplatform/libplatform.h>
@@ -94,34 +94,6 @@ void FArrayBufferAccessor::Discard()
 	GCurrentContents = v8::ArrayBuffer::Contents();
 }
 
-FString PropertyNameToString(UProperty* Property)
-{
-	auto Struct = Property->GetOwnerStruct();
-	auto name = Property->GetFName();
-	if (Struct)
-	{
-		if (auto s = Cast<UUserDefinedStruct>(Struct))
-		{
-			return s->PropertyNameToDisplayName(name);
-		}
-	}
-	return name.ToString();
-}
-
-bool MatchPropertyName(UProperty* Property, FName NameToMatch)
-{
-	auto Struct = Property->GetOwnerStruct();
-	auto name = Property->GetFName();
-	if (Struct)
-	{
-		if (auto s = Cast<UUserDefinedStruct>(Struct))
-		{
-			return s->PropertyNameToDisplayName(name) == NameToMatch.ToString();
-		}
-	}
-	return name == NameToMatch;
-}
-
 class FJavascriptIsolateImplementation : public FJavascriptIsolate
 {
 public:
@@ -140,6 +112,7 @@ public:
 
 	FTickerDelegate TickDelegate;
 	FDelegateHandle TickHandle;
+	bool bIsEditor;
 
 	struct FObjectPropertyAccessors
 	{
@@ -292,7 +265,7 @@ public:
 	{
 		isolate_ = isolate;
 		isolate->SetData(0, this);
-
+		v8::debug::SetConsoleDelegate(isolate_, new UnrealConsoleDelegate(isolate_));
 		Delegates = IDelegateManager::Create(isolate);
 
 #if STATS
@@ -376,8 +349,9 @@ public:
 	}
 #endif
 
-	FJavascriptIsolateImplementation()
+	FJavascriptIsolateImplementation(bool bIsEditorIsolate)
 	{
+		bIsEditor = bIsEditorIsolate;
 		Isolate::CreateParams params;
 
 		// Set our array buffer allocator instance
@@ -433,7 +407,7 @@ public:
 			ExportEnum(*It);
 		}
 
-		ExportConsole(ObjectTemplate);
+		// ExportConsole();
 
 		ExportMemory(globalNamespaceTemplate);
 
@@ -448,6 +422,7 @@ public:
 		Delegates = nullptr;
 
 		FTicker::GetCoreTicker().RemoveTicker(TickHandle);
+		v8::debug::SetConsoleDelegate(isolate_, nullptr);
 
 		isolate_->Dispose();
 	}	
@@ -643,10 +618,24 @@ public:
 
 			return arr;
 		}
+		else if (auto p = Cast<USoftObjectProperty>(Property))
+		{
+			// string only
+// 			auto* Data = p->GetObjectPropertyValue_InContainer(Buffer);
+// 			if (Data)
+// 			{
+// 				return ExportObject(Data);
+// 			}
+// 			else
+// 			{
+				auto Value = p->GetPropertyValue_InContainer(Buffer);
+				return V8_String(isolate_, Value.GetAssetName());
+// 			}
+		}
 		else if (auto p = Cast<UObjectPropertyBase>(Property))
 		{
 			return ExportObject(p->GetObjectPropertyValue_InContainer(Buffer));
-		}				
+		}	
 		else if (auto p = Cast<UByteProperty>(Property))
 		{
 			auto Value = p->GetPropertyValue_InContainer(Buffer);
@@ -723,7 +712,7 @@ public:
 		for (TFieldIterator<UProperty> PropertyIt(Struct, EFieldIteratorFlags::IncludeSuper); PropertyIt && len; ++PropertyIt)
 		{
 			auto Property = *PropertyIt;
-			auto PropertyName = PropertyNameToString(Property);
+			auto PropertyName = PropertyNameToString(Property, !bIsEditor);
 
 			auto name = I.Keyword(PropertyName);
 			auto value = v8_obj->Get(name);
@@ -865,7 +854,10 @@ public:
 				}
 				else
 				{
-					I.Throw(TEXT("Needed struct data"));
+					if (nullptr == p->Struct->GetOwnerClass())
+						I.Throw(FString::Printf(TEXT("Needed struct data : [null] %s"), *p->Struct->GetName()));
+					else
+						I.Throw(FString::Printf(TEXT("Needed struct data : %s %s"), *p->Struct->GetOwnerClass()->GetName(), *p->Struct->GetName()));
 				}
 			}
 			else
@@ -908,7 +900,7 @@ public:
 			if (p->Enum)
 			{
 				auto Str = StringFromV8(Value);
-				auto EnumValue = p->Enum->GetIndexByName(FName(*Str), true);
+				auto EnumValue = p->Enum->GetIndexByName(FName(*Str), EGetByNameFlags::None);
 				if (EnumValue == INDEX_NONE)
 				{
 					I.Throw(FString::Printf(TEXT("Enum Text %s for Enum %s failed to resolve to any value"), *Str, *p->Enum->GetName()));
@@ -926,7 +918,7 @@ public:
 		else if (auto p = Cast<UEnumProperty>(Property))
 		{
 			auto Str = StringFromV8(Value);
-			auto EnumValue = p->GetEnum()->GetIndexByName(FName(*Str), true);
+			auto EnumValue = p->GetEnum()->GetIndexByName(FName(*Str), EGetByNameFlags::None);
 			if (EnumValue == INDEX_NONE)
 			{
 				I.Throw(FString::Printf(TEXT("Enum Text %s for Enum %s failed to resolve to any value"), *Str, *p->GetName()));
@@ -996,76 +988,83 @@ public:
 		return Local<ObjectTemplate>::New(isolate_, GlobalTemplate);
 	}
 
-	void ExportConsole(Local<ObjectTemplate> global_templ)
+	void ExportConsole()
 	{
-		FIsolateHelper I(isolate_);
 
-		Local<FunctionTemplate> Template = I.FunctionTemplate();
+		//FIsolateHelper I(isolate_);
 
-		auto add_fn = [&](const char* name, FunctionCallback fn) {			
-			Template->PrototypeTemplate()->Set(I.Keyword(name), I.FunctionTemplate(fn));
-		};
+		//Local<FunctionTemplate> Template = I.FunctionTemplate();
 
-		// console.log
-		add_fn("log", [](const FunctionCallbackInfo<Value>& info)
-		{
-			UE_LOG(Javascript, Log, TEXT("%s"), *StringFromArgs(info));
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//auto add_fn = [&](const char* name, FunctionCallback fn) {			
+		//	Template->PrototypeTemplate()->Set(I.Keyword(name), I.FunctionTemplate(fn));
+		//};
 
-		// console.warn
-		add_fn("warn", [](const FunctionCallbackInfo<Value>& info)
-		{
-			UE_LOG(Javascript, Warning, TEXT("%s"), *StringFromArgs(info));
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//// console.log
+		//add_fn("log", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	UE_LOG(Javascript, Log, TEXT("%s"), *StringFromArgs(info));
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
 
-		// console.info
-		add_fn("info", [](const FunctionCallbackInfo<Value>& info)
-		{
-			UE_LOG(Javascript, Display, TEXT("%s"), *StringFromArgs(info));
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//// console.warn
+		//add_fn("warn", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	UE_LOG(Javascript, Warning, TEXT("%s"), *StringFromArgs(info));
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
 
-		// console.error
-		add_fn("error", [](const FunctionCallbackInfo<Value>& info)
-		{
-			UE_LOG(Javascript, Error, TEXT("%s"), *StringFromArgs(info));
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//// console.info
+		//add_fn("info", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	UE_LOG(Javascript, Display, TEXT("%s"), *StringFromArgs(info));
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
 
-		// console.assert
-		add_fn("assert", [](const FunctionCallbackInfo<Value>& info)
-		{
-			bool to_assert = info.Length() < 1 || info[0]->IsFalse();
-			if (to_assert)
-			{
-				auto stack_frame = StackTrace::CurrentStackTrace(info.GetIsolate(), 1, StackTrace::kOverview)->GetFrame(0);
-				auto filename = stack_frame->GetScriptName();
-				auto line_number = stack_frame->GetLineNumber();
+		//// console.error
+		//add_fn("error", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	UE_LOG(Javascript, Error, TEXT("%s"), *StringFromArgs(info));
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
 
-				UE_LOG(Javascript, Error, TEXT("Assertion:%s:%d %s"), *StringFromV8(filename), line_number, *StringFromArgs(info, 1));
-			}
+		//// console.assert
+		//add_fn("assert", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	bool to_assert = info.Length() < 1 || info[0]->IsFalse();
+		//	if (to_assert)
+		//	{
+		//		auto stack_frame = StackTrace::CurrentStackTrace(info.GetIsolate(), 1, StackTrace::kOverview)->GetFrame(0);
+		//		auto filename = stack_frame->GetScriptName();
+		//		auto line_number = stack_frame->GetLineNumber();
 
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//		UE_LOG(Javascript, Error, TEXT("Assertion:%s:%d %s"), *StringFromV8(filename), line_number, *StringFromArgs(info, 1));
+		//	}
 
-		// console.void
-		add_fn("void", [](const FunctionCallbackInfo<Value>& info)
-		{
-			info.GetReturnValue().Set(info.Holder());
-		});
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
 
-		global_templ->Set(
-			I.Keyword("console"),
-			// Create an instance
-			Template->GetFunction()->NewInstance()
-			);
+		//// console.void
+		//add_fn("void", [](const FunctionCallbackInfo<Value>& info)
+		//{
+		//	info.GetReturnValue().Set(info.Holder());
+		//});
+
+		//global_templ->Set(
+		//	I.Keyword("console"),
+		//	// Create an instance
+		//	Template->GetFunction()->NewInstance(isolate_->GetCurrentContext()).ToLocalChecked()
+		//	);
 	}	
 
 	void ExportMisc(Local<ObjectTemplate> global_templ)
 	{
 		FIsolateHelper I(isolate_);
+
+		auto fileManagerCwd = [](const FunctionCallbackInfo<Value>& info)
+		{
+			info.GetReturnValue().Set(V8_String(info.GetIsolate(), IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(L"."))); // FPaths::ProjectDir()
+        };
+		global_templ->Set(I.Keyword("$cwd"), I.FunctionTemplate(fileManagerCwd));
 
 #if WITH_EDITOR
 		auto exec_editor = [](const FunctionCallbackInfo<Value>& info) 
@@ -1311,7 +1310,7 @@ public:
 		global_templ->Set(
 			I.Keyword("memory"),
 			// Create an instance
-			Template->GetFunction()->NewInstance(),
+			Template->GetFunction()->NewInstance(isolate_->GetCurrentContext()).ToLocalChecked(),
 			// Do not modify!
 			ReadOnly);
 	}
@@ -1601,13 +1600,28 @@ public:
 		Template->Set(function_name, function);
 	}
 	
+	virtual void PublicExportClass(UClass* ClassToExport) override
+	{
+		// Clear some template maps
+		OnGarbageCollectedByV8(GetContext(), ClassToExport);
+
+		ExportClass(ClassToExport);
+	}
+
+	virtual void PublicExportStruct(UScriptStruct* StructToExport) override
+	{
+		ScriptStructToFunctionTemplateMap.Remove(StructToExport);
+
+		ExportStruct(StructToExport);
+	}
+
 	template <typename PropertyAccessors>
 	void ExportProperty(Handle<FunctionTemplate> Template, UProperty* PropertyToExport, int32 PropertyIndex) 
 	{
 		FIsolateHelper I(isolate_);
 
 		// Property getter
-		auto Getter = [](Local<String> property, const PropertyCallbackInfo<Value>& info) {
+		auto Getter = [](Local<Name> property, const PropertyCallbackInfo<Value>& info) {
 			auto isolate = info.GetIsolate();
 
 			auto data = info.Data();
@@ -1618,7 +1632,7 @@ public:
 		};
 
 		// Property setter
-		auto Setter = [](Local<String> property, Local<Value> value, const PropertyCallbackInfo<void>& info) {
+		auto Setter = [](Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& info) {
 			auto isolate = info.GetIsolate();
 
 			auto data = info.Data();
@@ -1629,7 +1643,7 @@ public:
 		};
 
 		Template->PrototypeTemplate()->SetAccessor(
-			I.Keyword(PropertyNameToString(PropertyToExport)),
+			I.Keyword(PropertyNameToString(PropertyToExport, !bIsEditor)),
 			Getter, 
 			Setter, 
 			I.External(PropertyToExport),
@@ -1949,97 +1963,193 @@ public:
 	{
 		FIsolateHelper I(isolate_);
 		
-		auto fn = [](const FunctionCallbackInfo<Value>& info) {
-			auto Class = reinterpret_cast<UClass*>((Local<External>::Cast(info.Data()))->Value());
+		if (bIsEditor)
+		{
+			auto fn = [](const FunctionCallbackInfo<Value>& info) {
+				auto Class = reinterpret_cast<UClass*>((Local<External>::Cast(info.Data()))->Value());
 
-			auto isolate = info.GetIsolate();
-			FIsolateHelper I(isolate);
+				auto isolate = info.GetIsolate();
+				FIsolateHelper I(isolate);
 
-			auto self = info.This();
-			auto out = Object::New(isolate);
+				auto self = info.This();
+				auto out = Object::New(isolate);
 
-			auto Object_toJSON = [&](Local<Value> value) -> Local<Value>
-			{
-				auto Object = UObjectFromV8(value);
-				if (Object == nullptr)
+				auto Object_toJSON = [&](Local<Value> value) -> Local<Value>
 				{
-					return Null(isolate);
-				}
-				else
-				{
-					return V8_String(isolate, Object->GetPathName());
-				}
-			};
-
-			for (TFieldIterator<UProperty> PropertyIt(Class, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
-			{
-				auto Property = *PropertyIt;
-
-				if (FV8Config::CanExportProperty(Class, Property))
-				{
-					auto PropertyName = PropertyNameToString(Property);
-
-					auto name = I.Keyword(PropertyName);
-					auto value = PropertyAccessor::Get(isolate, self, Property);
-					if (auto p = Cast<UClassProperty>(Property))
+					auto Object = UObjectFromV8(value);
+					if (Object == nullptr)
 					{
-						auto Class = UClassFromV8(isolate, value);
+						return Null(isolate);
+					}
+					else
+					{
+						return V8_String(isolate, Object->GetPathName());
+					}
+				};
 
-						if (Class)
+				for (TFieldIterator<UProperty> PropertyIt(Class, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
+				{
+					auto Property = *PropertyIt;
+
+					if (FV8Config::CanExportProperty(Class, Property))
+					{
+						auto PropertyName = PropertyNameToString(Property, false);
+
+						auto name = I.Keyword(PropertyName);
+						auto value = PropertyAccessor::Get(isolate, self, Property);
+						if (auto p = Cast<UClassProperty>(Property))
 						{
-							auto BPGC = Cast<UBlueprintGeneratedClass>(Class);
-							if (BPGC)
+							auto Class = UClassFromV8(isolate, value);
+
+							if (Class)
 							{
-								auto BP = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
-								value = I.String(BP->GetPathName());
+								auto BPGC = Cast<UBlueprintGeneratedClass>(Class);
+								if (BPGC)
+								{
+									auto BP = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+									value = I.String(BP->GetPathName());
+								}
+								else
+								{
+									value = I.String(Class->GetPathName());
+								}
 							}
 							else
 							{
-								value = I.String(Class->GetPathName());
+								value = I.Keyword("null");
 							}
-						}
-						else
-						{
-							value = I.Keyword("null");
-						}
 
-						out->Set(name, value);
-					}
-					else if (auto p = Cast<UObjectPropertyBase>(Property))
-					{
-						out->Set(name, Object_toJSON(value));						
-					}
-					else if (auto p = Cast<UArrayProperty>(Property))
-					{
-						if (auto q = Cast<UObjectPropertyBase>(p->Inner))
+							out->Set(name, value);
+						}
+						else if (auto p = Cast<UObjectPropertyBase>(Property))
 						{
-							auto arr = Handle<Array>::Cast(value);
-							auto len = arr->Length();
-							
-							auto out_arr = Array::New(isolate, len);
-							out->Set(name, out_arr);
-
-							for (decltype(len) Index = 0; Index < len; ++Index)
+							out->Set(name, Object_toJSON(value));
+						}
+						else if (auto p = Cast<UArrayProperty>(Property))
+						{
+							if (auto q = Cast<UObjectPropertyBase>(p->Inner))
 							{
-								out_arr->Set(Index, Object_toJSON(arr->Get(Index)));								
-							}															
+								auto arr = Handle<Array>::Cast(value);
+								auto len = arr->Length();
+
+								auto out_arr = Array::New(isolate, len);
+								out->Set(name, out_arr);
+
+								for (decltype(len) Index = 0; Index < len; ++Index)
+								{
+									out_arr->Set(Index, Object_toJSON(arr->Get(Index)));
+								}
+							}
+							else
+							{
+								out->Set(name, value);
+							}
 						}
 						else
 						{
 							out->Set(name, value);
-						}						
+						}
+					}
+				}
+
+				info.GetReturnValue().Set(out);
+			};
+			Template->PrototypeTemplate()->Set(I.Keyword("toJSON"), I.FunctionTemplate(fn, ClassToExport));
+		}
+		else
+		{
+			auto fn = [](const FunctionCallbackInfo<Value>& info) {
+				auto Class = reinterpret_cast<UClass*>((Local<External>::Cast(info.Data()))->Value());
+
+				auto isolate = info.GetIsolate();
+				FIsolateHelper I(isolate);
+
+				auto self = info.This();
+				auto out = Object::New(isolate);
+
+				auto Object_toJSON = [&](Local<Value> value) -> Local<Value>
+				{
+					auto Object = UObjectFromV8(value);
+					if (Object == nullptr)
+					{
+						return Null(isolate);
 					}
 					else
 					{
-						out->Set(name, value);
+						return V8_String(isolate, Object->GetPathName());
+					}
+				};
+
+				for (TFieldIterator<UProperty> PropertyIt(Class, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
+				{
+					auto Property = *PropertyIt;
+
+					if (FV8Config::CanExportProperty(Class, Property))
+					{
+						auto PropertyName = PropertyNameToString(Property, true);
+
+						auto name = I.Keyword(PropertyName);
+						auto value = PropertyAccessor::Get(isolate, self, Property);
+						if (auto p = Cast<UClassProperty>(Property))
+						{
+							auto Class = UClassFromV8(isolate, value);
+
+							if (Class)
+							{
+								auto BPGC = Cast<UBlueprintGeneratedClass>(Class);
+								if (BPGC)
+								{
+									auto BP = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+									value = I.String(BP->GetPathName());
+								}
+								else
+								{
+									value = I.String(Class->GetPathName());
+								}
+							}
+							else
+							{
+								value = I.Keyword("null");
+							}
+
+							out->Set(name, value);
+						}
+						else if (auto p = Cast<UObjectPropertyBase>(Property))
+						{
+							out->Set(name, Object_toJSON(value));
+						}
+						else if (auto p = Cast<UArrayProperty>(Property))
+						{
+							if (auto q = Cast<UObjectPropertyBase>(p->Inner))
+							{
+								auto arr = Handle<Array>::Cast(value);
+								auto len = arr->Length();
+
+								auto out_arr = Array::New(isolate, len);
+								out->Set(name, out_arr);
+
+								for (decltype(len) Index = 0; Index < len; ++Index)
+								{
+									out_arr->Set(Index, Object_toJSON(arr->Get(Index)));
+								}
+							}
+							else
+							{
+								out->Set(name, value);
+							}
+						}
+						else
+						{
+							out->Set(name, value);
+						}
 					}
 				}
-			}
 
-			info.GetReturnValue().Set(out);
-		};
+				info.GetReturnValue().Set(out);
+			};
+			Template->PrototypeTemplate()->Set(I.Keyword("toJSON"), I.FunctionTemplate(fn, ClassToExport));
+		}
 
-		Template->PrototypeTemplate()->Set(I.Keyword("toJSON"), I.FunctionTemplate(fn, ClassToExport));		
 	}
 
 	template <typename PropertyAccessor>
@@ -2454,7 +2564,12 @@ public:
 		auto arg2 = I.External((void*)&Owner);
 		Handle<Value> args[] = { arg, arg2 };
 
-		return v8_struct->GetFunction()->NewInstance(2, args);
+		auto obj = v8_struct->GetFunction()->NewInstance(isolate_->GetCurrentContext(), 2, args);
+
+		if (obj.IsEmpty())
+			return Undefined(isolate_);
+
+		return obj.ToLocalChecked();
 	}
 
 	Local<Value> ForceExportObject(UObject* Object)
@@ -2474,7 +2589,7 @@ public:
 			auto arg = I.External(Object);
 			Handle<Value> args[] = { arg };
 
-			value = v8_class->GetFunction()->NewInstance(1, args);
+			value = v8_class->GetFunction()->NewInstance(isolate_->GetCurrentContext(), 1, args).ToLocalChecked();
 
 			return value;
 		}
@@ -2538,7 +2653,7 @@ public:
 				auto arg = I.External(Object);
 				Handle<Value> args[] = { arg };
 
-				value = v8_class->GetFunction()->NewInstance(1, args);
+				value = v8_class->GetFunction()->NewInstance(isolate_->GetCurrentContext(), 1, args).ToLocalChecked();
 			}
 
 			return value;
@@ -2649,9 +2764,9 @@ public:
 	}
 };
 
-FJavascriptIsolate* FJavascriptIsolate::Create()
+FJavascriptIsolate* FJavascriptIsolate::Create(bool bIsEditor)
 {
-	return new FJavascriptIsolateImplementation();
+	return new FJavascriptIsolateImplementation(bIsEditor);
 }
 
 Local<Value> FJavascriptIsolate::ReadProperty(Isolate* isolate, UProperty* Property, uint8* Buffer, const IPropertyOwner& Owner)
