@@ -5,7 +5,7 @@
 #include "JavascriptIsolate.h"
 #include "Engine/StreamableManager.h"
 #include "IPAddress.h"
-#include "AI/Navigation/RecastNavMesh.h"
+#include "NavMesh/RecastNavMesh.h"
 #include "JavascriptLibrary.generated.h"
 
 USTRUCT(BlueprintType)
@@ -508,7 +508,7 @@ public:
 	static UObject* TryLoadByPath(FString Path);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
-	static void GenerateNavigation(UWorld* world, ARecastNavMesh* NavData);
+	static void GenerateNavigation(UWorld* InWorld, ARecastNavMesh* NavData);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static const FString& GetMetaData(UField* Field, const FString Key);
@@ -538,7 +538,8 @@ public:
 		bool bDefaultEnable,
 		bool bShouldClearEveryFrame,
 		EJavascriptStatDataType InStatType,
-		bool bCycleStat);
+		bool bCycleStat,
+		bool bSortByName);
 
 	UFUNCTION(BlueprintCallable, Category = "Scripting | Javascript")
 	static void AddMessage(FJavascriptStat Stat, EJavascriptStatOperation InStatOperation);

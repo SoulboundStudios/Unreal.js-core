@@ -1,6 +1,6 @@
 #pragma once
-#include "Package.h"
-#include "MetaData.h"
+#include "UObject/Package.h"
+#include "UObject/MetaData.h"
 
 static const FString NamespaceObject(TEXT("Unreal"));
 

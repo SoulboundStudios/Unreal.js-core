@@ -6,10 +6,10 @@
 #include "GameFramework/GameMode.h"
 #include "Sockets.h"
 #include "EngineUtils.h"
-#include "AI/Navigation//NavigationSystem.h"
+#include "NavigationSystem.h"
 #include "HAL/PlatformApplicationMisc.h"
-#include "Modules/ModuleVersion.h"
-#include "FileHelper.h"
+#include "Launch/Resources/Version.h"
+#include "Misc/FileHelper.h"
 #include "UObject/MetaData.h"
 #include "Engine/Engine.h"
 #include "V8PCH.h"
@@ -583,7 +583,7 @@ void UJavascriptLibrary::Log(const FJavascriptLogCategory& Category, ELogVerbosi
 
 	if (!Category.Handle->IsSuppressed(Verbosity))
 	{
-		FMsg::Logf_Internal(TCHAR_TO_ANSI(*FileName), LineNumber, Category.Handle->GetCategoryName(), Verbosity, *Message);
+		FMsg::Logf_Internal(TCHAR_TO_ANSI(*FileName), LineNumber, Category.Handle->GetCategoryName(), Verbosity, TEXT("%s"), *Message);
 		if (Verbosity == ELogVerbosity::Fatal) 
 		{
 			_DebugBreakAndPromptForRemote();
@@ -657,10 +657,13 @@ UObject* UJavascriptLibrary::TryLoadByPath(FString Path)
 	return FStringAssetReference(*Path).TryLoad();
 }
 
-void UJavascriptLibrary::GenerateNavigation(UWorld* world, ARecastNavMesh* NavData )
+void UJavascriptLibrary::GenerateNavigation(UWorld* InWorld, ARecastNavMesh* NavData )
 {
-	UNavigationSystem::InitializeForWorld(world, FNavigationSystemRunMode::PIEMode);
-	NavData->RebuildAll();
+	if (UNavigationSystemV1* Nav = Cast<UNavigationSystemV1>(InWorld->GetNavigationSystem()))
+	{
+		Nav->InitializeForWorld(*InWorld, FNavigationSystemRunMode::PIEMode);
+		NavData->RebuildAll();
+	}
 }
 
 const FString& UJavascriptLibrary::GetMetaData(UField* Field, const FString Key)
@@ -745,7 +748,8 @@ FJavascriptStat UJavascriptLibrary::NewStat(
 	bool bDefaultEnable,
 	bool bShouldClearEveryFrame,
 	EJavascriptStatDataType InStatType,
-	bool bCycleStat)
+	bool bCycleStat,
+	bool bSortByName)
 {
 	FJavascriptStat Out;
 #if STATS
@@ -760,6 +764,7 @@ FJavascriptStat UJavascriptLibrary::NewStat(
 		bShouldClearEveryFrame, 
 		(EStatDataType::Type)InStatType, 
 		bCycleStat, 
+		bSortByName,
 		FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
 #endif
 
@@ -818,8 +823,7 @@ bool UJavascriptLibrary::IsPendingKill(AActor* InActor)
 
 FBox UJavascriptLibrary::GetWorldBounds(UWorld* InWorld)
 {
-	auto* NavSys = InWorld->GetNavigationSystem();
-	if (NavSys)
+	if (auto* NavSys = Cast<UNavigationSystemV1>(InWorld->GetNavigationSystem()))
 	{
 		return NavSys->GetWorldBounds();
 	}
