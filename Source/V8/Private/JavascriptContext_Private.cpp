@@ -2137,20 +2137,12 @@ public:
 
 		instance.no_tooltip = !bIncludingTooltip;
 
-		instance.ExportBootstrap();
-
 		for (auto it = Environment->ClassToFunctionTemplateMap.CreateConstIterator(); it; ++it)
 		{
 			instance.Export(it.Key());
 		}
 
-		for (auto pair : WKOs)
-		{
-			auto k = pair.Key;
-			auto v = pair.Value;
-
-			instance.ExportWKO(k, v);
-		}
+		// ExportBootstrap adds Context and Root 'WKO'
 
 		instance.Finalize();
 

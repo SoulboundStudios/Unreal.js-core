@@ -32,10 +32,10 @@ void UJavascriptComponent::OnRegister()
 			auto Context = Isolate->CreateContext();
 
 			JavascriptContext = Context;
-
-			Context->Expose("Root", this);
-			Context->Expose("GWorld", GetWorld());
-			Context->Expose("GEngine", GEngine);
+			
+			Context->Expose(TEXT("Root"), this);
+			Context->Expose(TEXT("GWorld"), GetWorld());
+			Context->Expose(TEXT("GEngine"), GEngine);
 		}
 	}
 

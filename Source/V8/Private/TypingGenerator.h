@@ -531,18 +531,14 @@ struct TypingGenerator : TypingGeneratorBase
 		fold();
 	}
 
-	void ExportBootstrap()
+	void ManualDeclares(FString &text)
 	{
 		TokenWriter w(*this);
-		w.push("declare global {\n");
+		w.push("module global {\n");
 		w.push("\tfunction require(name: string): any;\n");
 		w.push("}\n\n");
-		w.push("function gc() : void;\n");
-		w.push("type UnrealEngineClass = any;\n");
 
-		w.push("type timeout_handle = any;\n");
-		w.push("function setTimeout(fn : (milliseconds: number) => void, timeout : number) : timeout_handle;\n");
-		w.push("function clearTimeout(handle : timeout_handle) : void;\n");
+		w.push("type UnrealEngineClass = any;\n");
 
 		w.push("class UnrealEngineMulticastDelegate<T> {\n");
 		w.push("\tAdd(fn : T): void;\n");
@@ -554,19 +550,28 @@ struct TypingGenerator : TypingGeneratorBase
 		w.push("\tRemove(fn : T): void;\n");
 		w.push("}\n\n");
 
-		w.push("class Process {\n");
-		w.push("\tnextTick(fn : (number) => void): void;\n");		
-		w.push("}\n\n");
-		w.push("var process : Process;\n\n");
+		text.Append(*w);
+	}
 
-		w.push("class Memory {\n");
+	void ExportBootstrap(FString &text)
+	{
+		TokenWriter w(*this);
+		w.push("declare function gc() : void;\n\n");
+
+		w.push("type timeout_handle = any;\n");
+		w.push("declare function setTimeout(fn : (milliseconds: number) => void, timeout : number) : timeout_handle;\n");
+		w.push("declare function clearTimeout(handle : timeout_handle) : void;\n");
+
+		w.push("declare class Memory {\n");
 		w.push("\texec(ab : ArrayBuffer, fn : (ab : ArrayBuffer) => void): void;\n");
-		w.push("\taccess(obj : JavascriptMemoryObject): ArrayBuffer;\n");
+		w.push("\taccess(obj : Unreal.JavascriptMemoryObject): ArrayBuffer;\n");
 		w.push("}\n\n");
-		w.push("var memory : Memory;\n\n");
-		w.push("declare var GEngine : Engine;\n\n");
-		w.push("declare var GWorld : World;\n\n");
-		w.push("declare var Root : JavascriptComponent | any;\n\n");
+		w.push("declare var memory : Memory;\n\n");
+		w.push("declare var GEngine : Unreal.Engine;\n\n");
+		w.push("declare var GWorld : Unreal.World;\n\n");
+		w.push("declare var Root : Unreal.JavascriptCommandlet | Unreal.JavascriptEditorTick | Unreal.JavascriptComponent;\n\n");
+		w.push("declare var Context : Unreal.JavascriptContext;\n\n");
+
 		w.push("declare namespace JSX {\n");
 		w.push("\tinterface IntrinsicElements {\n");
 		w.push("\t\t[elemName: string]: any;\n");
@@ -578,7 +583,7 @@ struct TypingGenerator : TypingGeneratorBase
 		w.push("\t}\n");
 		w.push("}\n\n");
 
-		Text.Append(*w);
+		text.Append(*w);
 	}
 
 	void ExportWKO(FString name, UObject* Object)
@@ -612,26 +617,23 @@ struct TypingGenerator : TypingGeneratorBase
 		{
 			const bool is_last = (Index == (Folded.Num() - 1));
 
-			FString Text = Folded[Index];
-
-            // Apply namespace object to typings file
- 			FString NamespacedHeader(TEXT("declare namespace "));
- 			NamespacedHeader.Append(NamespaceObject);
- 			NamespacedHeader.Append(TEXT(" {\n"));
- 			NamespacedHeader.Append(Text);
- 			Text = NamespacedHeader;
- 			Text.Append("\n}\n");
-
 			auto page_name = [&](int32 Index) {
 				return FString::Printf(TEXT("_part_%d_%s.%s"), Index, *BaseFilename, *Extension);
 			};
 
 			FString PageFilename = is_last ? Filename : FPaths::Combine(*Path, *page_name(Index));
 
+			FString Text = Folded[Index];
+
+			// Apply namespace object to typings file
+			FString NamespacedHeader(TEXT("declare namespace "));
+			NamespacedHeader.Append(NamespaceObject);
+			NamespacedHeader.Append(TEXT(" {\n"));
+			NamespacedHeader.Append(Text);
+
 			if (is_last)
 			{
 				FString Header;
-
 				for (int32 Prev = 0; Prev < Index; ++Prev)
 				{
 					Header.Append(FString::Printf(TEXT("/// <reference path=\"%s\">/>\n"), *page_name(Prev)));
@@ -639,7 +641,15 @@ struct TypingGenerator : TypingGeneratorBase
 
 				Header.Append(Text);
 				Text = Header;
+
+				ManualDeclares(NamespacedHeader);
 			}
+
+			Text = NamespacedHeader;
+			Text.Append("\n}\n");
+
+			if (is_last)
+				ExportBootstrap(Text);
 
 			if (!FFileHelper::SaveStringToFile(Text, *PageFilename)) return false;
 		}
