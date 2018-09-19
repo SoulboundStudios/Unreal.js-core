@@ -215,7 +215,7 @@ public:
 
 	static FString GetPluginScriptsDirectory5()
 	{
-		return FPaths::GameContentDir() / "UnrealJS/";
+		return FPaths::ProjectContentDir() / "UnrealJS/";
 	}
 
 	static FString GetPakPluginScriptsDirectory()
