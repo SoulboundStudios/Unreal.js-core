@@ -466,7 +466,7 @@ public:
 		{
 			auto request = (char*)In;
 
-			UE_LOG(Javascript, Log, TEXT("requested URI:%s"), UTF8_TO_TCHAR(request));
+			UE_LOG(Javascript, Verbose, TEXT("requested URI:%s"), UTF8_TO_TCHAR(request));
 
 			FString res[][2] = {
 				{
@@ -550,7 +550,7 @@ public:
 
 	void Install(int32 Port)
 	{
-		lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_DEBUG | LLL_INFO, lws_debugLog);
+		lws_set_log_level(LLL_ERR | LLL_WARN, lws_debugLog); // | LLL_NOTICE | LLL_INFO | LLL_DEBUG
 
 		WebSocketProtocols = new lws_protocols[2];
 		FMemory::Memzero(WebSocketProtocols, sizeof(lws_protocols) * 2);
