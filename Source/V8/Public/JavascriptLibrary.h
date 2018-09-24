@@ -8,6 +8,29 @@
 #include "NavMesh/RecastNavMesh.h"
 #include "JavascriptLibrary.generated.h"
 
+class FMD5;
+
+UCLASS(BlueprintType, ClassGroup = Script, Blueprintable)
+class UJavascriptMD5 : public UObject
+{
+	GENERATED_BODY()
+
+private:
+	FMD5 *hash;
+
+public:
+	UJavascriptMD5();
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	void Update();
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	FString Final();
+
+	UFUNCTION(BlueprintCallable, Category = "Scripting|Javascript")
+	static FString HashStr(FString &inStr);
+};
+
 USTRUCT(BlueprintType)
 struct V8_API FDirectoryItem
 {

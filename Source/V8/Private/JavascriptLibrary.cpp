@@ -13,6 +13,7 @@
 #include "UObject/MetaData.h"
 #include "Engine/Engine.h"
 #include "V8PCH.h"
+#include "SecureHash.h"
 
 struct FPrivateSocketHandle
 {
@@ -28,6 +29,40 @@ struct FPrivateSocketHandle
 	ISocketSubsystem* SocketSub;
 	FSocket* Socket;
 };
+
+UJavascriptMD5::UJavascriptMD5()
+{
+	hash = nullptr;
+}
+
+void UJavascriptMD5::Update()
+{
+	if (hash == nullptr)
+		hash = new FMD5();
+
+	const int32 inputLen = FArrayBufferAccessor::GetSize();
+	const void *input = FArrayBufferAccessor::GetData();
+	hash->Update((uint8*)input, inputLen);
+}
+
+FString UJavascriptMD5::Final()
+{
+	if (hash == nullptr)
+		return TEXT("0xd41d8cd98f00b204e9800998ecf8427e");
+
+	uint8 digest[16];
+	hash->Final(digest);
+	
+	FString MD5;
+	for (int32 i = 0; i < 16; i++)
+		MD5 += FString::Printf(TEXT("%02x"), digest[i]);
+	return MD5;
+}
+
+FString UJavascriptMD5::HashStr(FString &inStr)
+{
+	return FMD5::HashAnsiString(*inStr);
+}
 
 FJavascriptSocket UJavascriptLibrary::CreateSocket(FName SocketType, FString Description, bool bForceUDP)
 {
