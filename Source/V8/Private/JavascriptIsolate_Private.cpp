@@ -382,12 +382,13 @@ public:
 
 		// Save it into the persistant handle
 		GlobalTemplate.Reset(isolate_, ObjectTemplate);
+		auto globalTemplate = GetGlobalTemplate();
 
         // Add the global namespace object
  		FIsolateHelper I(isolate_);
  		GlobalNamespaceTemplate.Reset(isolate_, ObjectTemplate::New(isolate_));
- 		auto globalNamespaceTemplate = Local<v8::ObjectTemplate>::New(isolate_, GlobalNamespaceTemplate);
- 		GetGlobalTemplate()->Set(I.String(NamespaceObject), globalNamespaceTemplate);
+		auto globalNamespaceTemplate = GetGlobalNamespaceTemplate();
+		globalTemplate->Set(I.String(NamespaceObject), globalNamespaceTemplate);
 
 		// Export all structs
 		for (TObjectIterator<UScriptStruct> It; It; ++It)
@@ -407,11 +408,12 @@ public:
 			ExportEnum(*It);
 		}
 
+
 		// ExportConsole();
 
-		ExportMemory(globalNamespaceTemplate);
+		ExportMemory(globalTemplate);
 
-		ExportMisc(globalNamespaceTemplate);		
+		ExportMisc(globalTemplate);
 	}		
 
 	~FJavascriptIsolateImplementation()
