@@ -48,7 +48,7 @@ void UJavascriptMD5::Update()
 FString UJavascriptMD5::Final()
 {
 	if (hash == nullptr)
-		return TEXT("0xd41d8cd98f00b204e9800998ecf8427e");
+		return TEXT("d41d8cd98f00b204e9800998ecf8427e");
 
 	uint8 digest[16];
 	hash->Final(digest);
@@ -171,7 +171,25 @@ UClass* UJavascriptLibrary::GetBlueprintGeneratedClassFromPath(FString Path)
 
 UClass* UJavascriptLibrary::FindClass(FString Path)
 {
-	return FindObject<UClass>(ANY_PACKAGE, *Path);
+	UClass *ret = FindObject<UClass>(ANY_PACKAGE, *Path);
+	if (!ret)
+	{
+		UE_LOG(Javascript, Warning, TEXT("FindObject failed: trying LoadObject %s"), *Path);
+		ret = LoadObject<UClass>(nullptr, *Path);
+	}
+
+	if (!ret)
+	{
+		UE_LOG(Javascript, Warning, TEXT("LoadObject failed: trying LoadClass %s"), *Path);
+		ret = LoadClass<UObject>(nullptr, *Path, nullptr);
+	}
+
+	if (!ret)
+	{
+		UE_LOG(Javascript, Warning, TEXT("LoadClass failed: nothing left to try for %s"), *Path);
+	}
+
+	return ret;
 }
 
 UObject* UJavascriptLibrary::GetOuter(UObject* Object)
