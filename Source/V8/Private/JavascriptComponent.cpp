@@ -27,11 +27,24 @@ void UJavascriptComponent::OnRegister()
 	{
 		if (GetWorld() && ((GetWorld()->IsGameWorld() && !GetWorld()->IsPreviewWorld()) || bActiveWithinEditor))
 		{
-			auto Isolate = NewObject<UJavascriptIsolate>();
-			Isolate->Init(false);
-			auto Context = Isolate->CreateContext();
+			UJavascriptIsolate* Isolate = nullptr;
+			UJavascriptStaticCache* StaticGameData = Cast<UJavascriptStaticCache>(GEngine->GameSingleton);
+			if (StaticGameData)
+			{
+				if (StaticGameData->Isolates.Num() > 0)
+					Isolate = StaticGameData->Isolates.Pop();
+			}
 
+			if (!Isolate)
+			{
+				Isolate = NewObject<UJavascriptIsolate>();
+				Isolate->Init(false);
+				Isolate->AddToRoot();
+			}			
+
+			auto* Context = Isolate->CreateContext();
 			JavascriptContext = Context;
+			JavascriptIsolate = Isolate;
 			FGameDelegates::Get().GetEndPlayMapDelegate().AddLambda([this]()
 			{
 				FGameDelegates::Get().GetEndPlayMapDelegate().RemoveAll(this);
@@ -70,6 +83,12 @@ void UJavascriptComponent::Deactivate()
 
 void UJavascriptComponent::BeginDestroy()
 {
+	auto* StaticGameData = Cast<UJavascriptStaticCache>(GEngine->GameSingleton);
+	if (StaticGameData)
+	{
+		StaticGameData->Isolates.Add(JavascriptIsolate);
+	}
+
 	if (bIsActive)
 	{
 		Deactivate();
