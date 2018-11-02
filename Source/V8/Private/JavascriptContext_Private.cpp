@@ -643,11 +643,24 @@ void UJavascriptGeneratedFunction::Thunk(UObject* Context, FFrame& Stack, RESULT
 				continue;
 			}
 
-			if (Property->PropertyFlags & CPF_OutParm)
-			{
-				// evaluate the expression for this parameter, which sets Stack.MostRecentPropertyAddress to the address of the property accessed
-				Stack.Step(Stack.Object, NULL);
+			bool bIsOutParam = Property->PropertyFlags & CPF_OutParm;
+			bool bIsInParam = !bIsOutParam || ((Property->PropertyFlags & CPF_ReferenceParm) != 0);
 
+			uint8* Param = nullptr;
+			if (bIsInParam)
+			{
+				// copy the result of the expression for this parameter into the appropriate part of the local variable space
+				Param = Property->ContainerPtrToValuePtr<uint8>(NewStack.Locals);
+				checkSlow(Param);
+
+				Property->InitializeValue_InContainer(NewStack.Locals);
+			}
+
+			// evaluate the expression for this parameter, which may set Stack.MostRecentPropertyAddress to the address of the property accessed
+			Stack.Step(Stack.Object, Param);
+
+			if (bIsOutParam)
+			{
 				CA_SUPPRESS(6263)
 				FOutParmRec* Out = (FOutParmRec*)FMemory_Alloca(sizeof(FOutParmRec));
 				// set the address and property in the out param info
@@ -668,16 +681,6 @@ void UJavascriptGeneratedFunction::Thunk(UObject* Context, FFrame& Stack, RESULT
 				{
 					*LastOut = Out;
 				}
-			}
-			else
-			{
-				// copy the result of the expression for this parameter into the appropriate part of the local variable space
-				uint8* Param = Property->ContainerPtrToValuePtr<uint8>(NewStack.Locals);
-				checkSlow(Param);
-
-				Property->InitializeValue_InContainer(NewStack.Locals);
-
-				Stack.Step(Stack.Object, Param);
 			}
 		}
 		Stack.Code++;
