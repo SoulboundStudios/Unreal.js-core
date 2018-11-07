@@ -237,14 +237,14 @@ function makeWindowTimer(target, sleep) {
                         }
                     } finally {
                         inCallback = false;
-                    }
 
-                    if (timer.repeat > 0 && !timer.cancel) {
-                        timer.time += timer.repeat;
-                        heapFixDown(timersByTime, 1, timerCompare);
-                    } else {
-                        delete timersByHandle[timer.handle];
-                        heapPop(timersByTime, timerCompare);
+                        if (timer.repeat > 0 && !timer.cancel) {
+                            timer.time += timer.repeat;
+                            heapFixDown(timersByTime, 1, timerCompare);
+                        } else {
+                            delete timersByHandle[timer.handle];
+                            heapPop(timersByTime, timerCompare);
+                        }
                     }
                 } else if (!nonblocking) {
                     sleep(timer.time - now);
