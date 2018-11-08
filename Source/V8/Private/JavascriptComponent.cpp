@@ -6,7 +6,7 @@
 #include "Engine/Engine.h"
 #include "V8PCH.h"
 #include "IV8.h"
-
+#include "GameDelegates.h"
 
 DECLARE_CYCLE_STAT(TEXT("Javascript Component Tick Time"), STAT_JavascriptComponentTickTime, STATGROUP_Javascript);
 
@@ -32,7 +32,13 @@ void UJavascriptComponent::OnRegister()
 			auto Context = Isolate->CreateContext();
 
 			JavascriptContext = Context;
-			
+			FGameDelegates::Get().GetEndPlayMapDelegate().AddLambda([this]()
+			{
+				FGameDelegates::Get().GetEndPlayMapDelegate().RemoveAll(this);
+				this->OnEndPlay.ExecuteIfBound();
+				this->OnEndPlay.Unbind();
+			});
+
 			Context->Expose(TEXT("Root"), this);
 			Context->Expose(TEXT("GWorld"), GetWorld());
 			Context->Expose(TEXT("GEngine"), GEngine);

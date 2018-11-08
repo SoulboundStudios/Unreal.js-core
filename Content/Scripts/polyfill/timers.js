@@ -25,7 +25,12 @@
         // non blocking
         timerLoop(true);
     }
-
+	
+	var onEndPlay = []
+	var endplay = function () {
+		onEndPlay.forEach(fn => fn());
+	}
+	
     target.process = {
         nextTick: function (fn) {
             nextTicks.push(fn)
@@ -39,9 +44,16 @@
         argc: 0,
         platform: 'UnrealJS',
         env: {},
-        on: function (a, b) {},
+        on: function (a, b) {
+			console.log(`on ${a} : ${typeof b}`);
+			if (a === 'exit' && typeof b === 'function')
+			{
+				onEndPlay.push(b);
+			}
+		},
         cwd: $cwd
     }
 
     Root.OnTick.Add(root)
+	Root.OnEndPlay.Add(endplay)
 })(this)
