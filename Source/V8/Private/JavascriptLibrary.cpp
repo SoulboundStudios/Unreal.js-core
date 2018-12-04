@@ -812,6 +812,7 @@ FJavascriptStat UJavascriptLibrary::NewStat(
 {
 	FJavascriptStat Out;
 #if STATS
+#if ENGINE_MINOR_VERSION > 20
     ANSICHAR StatName[NAME_SIZE];
     ANSICHAR GroupName[NAME_SIZE];
     ANSICHAR GroupCategoryName[NAME_SIZE];
@@ -831,6 +832,21 @@ FJavascriptStat UJavascriptLibrary::NewStat(
         bCycleStat, 
         bSortByName,
         FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
+else
+    Out.Instance = MakeShareable(new FJavascriptThreadSafeStaticStatBase);
+    Out.Instance->DoSetup(
+        InStatName.GetPlainANSIString(),
+        *InStatDesc, 
+        InGroupName.GetPlainANSIString(),
+        InGroupCategory.GetPlainANSIString(),
+        *InGroupDesc, 
+        bDefaultEnable, 
+        bShouldClearEveryFrame, 
+        (EStatDataType::Type)InStatType, 
+        bCycleStat, 
+        bSortByName,
+        FPlatformMemory::EMemoryCounterRegion::MCR_Invalid);
+#endif
 #endif
 
 	return Out;
@@ -996,9 +1012,3 @@ FText UJavascriptLibrary::UpdateLocalizationText(const FJavascriptText& JText, c
 	return FText::FromString(JText.String);
 #endif
 }
-
-// bool UJavascriptLibrary::RemoveDisplayString(FJavascriptText& JavascriptText)
-// {
-// 	auto DisplayString = FTextInspector::GetSharedDisplayString(JavascriptText.Handle);
-// 	return FTextLocalizationManager::Get().RemoveDisplayString(DisplayString);
-// }
