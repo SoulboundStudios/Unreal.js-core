@@ -36,7 +36,6 @@ void UJavascriptComponent::OnRegister()
 			{
 				FGameDelegates::Get().GetEndPlayMapDelegate().RemoveAll(this);
 				this->OnEndPlay.ExecuteIfBound();
-				this->OnEndPlay.Unbind();
 			});
 
 			Context->Expose(TEXT("Root"), this);
