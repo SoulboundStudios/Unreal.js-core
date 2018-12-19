@@ -186,7 +186,7 @@ UClass* UJavascriptLibrary::FindClass(FString Path)
 
 	if (!ret)
 	{
-		UE_LOG(Javascript, Warning, TEXT("LoadClass failed: nothing left to try for %s"), *Path);
+		UE_LOG(Javascript, Error, TEXT("LoadClass failed: nothing left to try for %s"), *Path);
 	}
 
 	return ret;
