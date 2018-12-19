@@ -23,3 +23,18 @@ function createHash(algorithm = "md5") {
     return new Hash();
 }
 exports.createHash = createHash;
+function randomBytes(size) {
+    const ret = new Uint8Array(size);
+    randomFillSync(ret, 0, size);
+    return ret;
+}
+exports.randomBytes = randomBytes;
+function randomFillSync(buffer, offset = 0, size) {
+    if (size === undefined)
+        size = buffer.length - offset;
+    for (let idx = 0; idx < size; ++idx)
+        buffer[idx] = Unreal.KismetMathLibrary.RandomInteger(256);
+    return buffer;
+}
+exports.randomFillSync = randomFillSync;
+//# sourceMappingURL=crypto.js.map
