@@ -372,6 +372,47 @@ struct TypingGenerator : TypingGeneratorBase
 					is_optional = true;
 				}
 
+				const FString ParamName = ParamIt->GetName();
+				const FName DefaultValueMetaDataKey = *FString::Printf(TEXT("CPP_Default_%s"), *ParamName);
+
+				bool has_default = false;
+				FString DefaultsStr;
+				if (Function->HasMetaData(DefaultValueMetaDataKey))
+				{
+					const FString& ParamDefaultValue = Function->GetMetaData(DefaultValueMetaDataKey);
+
+					if (ParamDefaultValue.Len() > 0 && !ParamDefaultValue.Equals(TEXT("None")))
+					{
+						if (ParamDefaultValue.Contains(TEXT(",")))
+						{
+							// array type entry: probably a vector or somesuch.  see FHeaderParser::DefaultValueStringCppFormatToInnerFormat
+							is_optional = true;
+							// note that optional values of this type will end up with ~ie 0,0,0 instead of actual values.  Todo?: convert to constructor type call ~ie = Vector(1.0, 1.0, 1.0)
+						}
+						else
+						{
+							has_default = true;
+							is_optional = false;
+							DefaultsStr.Append(ANSI_TO_TCHAR(" = "));
+
+							if (ParamIt->IsA(UStrProperty::StaticClass())
+								|| ParamIt->IsA(UTextProperty::StaticClass())
+								|| ParamIt->IsA(UNameProperty::StaticClass()))
+							{
+								DefaultsStr.Append(FString::Printf(TEXT("\"%s\""), *ParamDefaultValue));
+							}
+							else
+							{
+								DefaultsStr.Append(ParamDefaultValue);
+							}
+						}
+					}
+					else
+					{
+						is_optional = true;
+					}
+				}
+
 				auto Property = *ParamIt;
 				auto PropertyName = FV8Config::Safeify(PropertyNameToString(Property));
 
@@ -382,6 +423,7 @@ struct TypingGenerator : TypingGeneratorBase
 				}
 				w2.push(": ");
 				w2.push(Property);
+				w2.push(DefaultsStr);
 
 				Arguments.Add(*w2);
 			}
