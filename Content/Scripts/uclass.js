@@ -165,7 +165,7 @@
                     let s = String(F)
 
                     let matches = RE_func.exec(s)
-                    if (!matches) throw "invalid function"
+                    if (!matches) throw `invalid function ${s}`
 
                     let functionName = matches[1]
                     s = matches[4]

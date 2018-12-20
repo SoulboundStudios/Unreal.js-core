@@ -54,6 +54,8 @@
         cwd: $cwd
     }
 
-    Root.OnTick.Add(root)
-	Root.OnEndPlay.Add(endplay)
+    Root.OnTick.Add(root);
+
+	// note: Editor timer object F/UJavascriptEditorTick doesn't have 'OnEndPlay'
+	if(Root.OnEndPlay) Root.OnEndPlay.Add(endplay)
 })(this)
