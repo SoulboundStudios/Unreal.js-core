@@ -399,7 +399,13 @@ struct TypingGenerator : TypingGeneratorBase
 								|| ParamIt->IsA(UTextProperty::StaticClass())
 								|| ParamIt->IsA(UNameProperty::StaticClass()))
 							{
-								DefaultsStr.Append(FString::Printf(TEXT("\"%s\""), *ParamDefaultValue));
+								int quoteStart, quoteEnd;
+								bool useSubText = ParamDefaultValue.FindChar(TCHAR('"'), quoteStart) && ParamDefaultValue.FindLastChar(TCHAR('"'), quoteEnd);
+
+								if (useSubText)
+									DefaultsStr.Append(FString::Printf(TEXT("%s"), *ParamDefaultValue.Mid(quoteStart, quoteEnd - quoteStart + 1)));
+								else
+									DefaultsStr.Append(FString::Printf(TEXT("\"%s\""), *ParamDefaultValue));
 							}
 							else
 							{
