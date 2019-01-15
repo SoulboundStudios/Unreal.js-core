@@ -79,6 +79,30 @@ namespace v8
 
 			auto Object = value->ToObject();
 
+			auto props = Object->GetOwnPropertyNames();
+			TArray<FName> objProps;
+			auto GetByFName = [&](const FString &name)
+			{
+				FName fname(*name);
+				if (objProps.Num() == 0)
+				{
+					for (uint32 idx = 0; idx < props->Length(); ++idx)
+					{
+						auto propName = props->Get(idx)->ToString();
+						objProps.Add(FName(*StringFromV8(propName)));
+					}
+				}
+
+				for (int32 idx = 0; idx < objProps.Num(); ++idx)
+				{
+					if (objProps[idx].IsEqual(fname))
+						return Object->Get(props->Get(idx));
+				}
+
+				v8::Local<v8::Value> emptyRet;
+				return emptyRet;
+			};
+
 			// Iterate over parameters again
 			for (TFieldIterator<UProperty> It(SignatureFunction); It; ++It)
 			{
@@ -96,7 +120,7 @@ namespace v8
 				// rejects 'const T&' and pass 'T&' as its name
 				else if ((PropertyFlags & (CPF_ConstParm | CPF_OutParm)) == CPF_OutParm)
 				{
-					auto sub_value = Object->Get(I.Keyword(Param->GetName()));
+					auto sub_value = GetByFName(Param->GetName());
 
 					if (!sub_value.IsEmpty())
 					{
