@@ -73,8 +73,9 @@ FJavascriptEdGraphPin UJavascriptGraphEdNode::CreatePin(
 
 	UEdGraphPin* GraphPin = Super::CreatePin(Dir, PinCategory, PinSubCategory, PinSubCategoryObject, PinName, PinParams);
 	GraphPin->PinToolTip = PinToolTip;
-	return FJavascriptEdGraphPin{ GraphPin };
+	return FJavascriptEdGraphPin(GraphPin);
 }
+
 
 bool UJavascriptGraphEdNode::RemovePinByName(FName PinName)
 {
