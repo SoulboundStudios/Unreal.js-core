@@ -49,6 +49,13 @@ void UJavascriptComponent::OnRegister()
 			JavascriptContext = Context;
 			JavascriptIsolate = Isolate;
 
+			FGameDelegates::Get().GetEndPlayMapDelegate().AddLambda([this]()
+			{
+				FGameDelegates::Get().GetEndPlayMapDelegate().RemoveAll(this);
+				this->OnEndPlay.ExecuteIfBound();
+			});
+
+
 			Context->Expose("Root", this);
 			Context->Expose("GWorld", GetWorld());
 			Context->Expose("GEngine", GEngine);
